@@ -16,6 +16,12 @@ Automatic CRUD API generator for TypeScript with Prisma - Build REST APIs in min
 - 🔌 **Extensible**: Custom routes and middleware support
 - 📖 **Schema Generation**: Auto-generate Prisma schemas from models
 - 🗄️ **Repository Pattern**: Built-in repository for database operations
+- 🔄 **Lifecycle Hooks**: beforeCreate, afterCreate, beforeUpdate, afterUpdate, beforeDelete, afterDelete, beforeFind, afterFind
+- 🔒 **Field Security**: Hidden fields support with automatic filtering
+- 🎛️ **Dynamic Selection**: Smart field selection based on fillable and hidden properties
+- ⚡ **Auto Setup**: Intelligent postinstall script for quick project initialization
+- 🔄 **TypeScript First**: Native TypeScript support with ESM modules
+- 🖥️ **CLI Tool**: Command-line interface for project initialization and scaffolding
 
 ## Installation
 
@@ -25,9 +31,45 @@ npm install crudora prisma @prisma/client
 yarn add crudora prisma @prisma/client
 ```
 
+**Note**: After installation, Crudora automatically sets up your project with:
+
+- Prisma schema template
+- Environment configuration (.env)
+- Basic server setup (server.ts)
+- Useful npm scripts
+
+## CLI Usage
+
+Crudora comes with a built-in CLI tool for quick project initialization and database management:
+
+```bash
+# Initialize a new Crudora project in the current directory
+npx crudora init
+
+# Start Prisma Studio for database management
+npx crudora studio
+
+# Generate Prisma Client
+npx crudora generate
+
+# Push Prisma schema to database
+npx crudora push
+
+# Run Prisma migrations
+npx crudora migrate
+```
+
+### CLI Commands
+
+- `init` - Initialize a new Crudora project with necessary files (schema.prisma, .env, server.ts, tsconfig.json)
+- `studio` - Start Prisma Studio for visual database management
+- `generate` - Generate Prisma Client based on your schema
+- `push` - Push Prisma schema to your database without migrations
+- `migrate` - Run Prisma migrations for schema changes
+
 ## Quick Start
 
-### Method 1: Simple Inheritance (Recommended)
+### Basic Usage
 
 ```typescript
 import { CrudoraServer, Model } from "crudora";
@@ -35,26 +77,34 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// Define your models
 class User extends Model {
   static tableName = "users";
   static primaryKey = "id";
   static timestamps = true;
-  static fillable = ["name", "email"];
+  static fillable = ["name", "email", "password"];
   static hidden = ["password"];
+
+  // Lifecycle hooks
+  static async beforeCreate(data: any): Promise<any> {
+    data.password = await hashPassword(data.password);
+    return data;
+  }
+
+  static async afterCreate(data: any, result: any): Promise<any> {
+    console.log(`User created: ${result.email}`);
+    return result;
+  }
 }
 
 class Post extends Model {
   static tableName = "posts";
   static fillable = ["title", "content", "authorId"];
+  static hidden = ["deletedAt"];
 }
 
-// Create server and register models
 const server = new CrudoraServer({
   port: 3000,
   prisma: prisma,
-  cors: true,
-  basePath: "/api",
 });
 
 server
@@ -63,40 +113,6 @@ server
   .listen(() => {
     console.log("Server running on port 3000");
   });
-```
-
-### Method 2: Decorator Pattern
-
-```typescript
-import { CrudoraServer, Model, Field } from "crudora";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
-
-@Model({ tableName: "users" })
-class User {
-  @Field({ type: "uuid", primary: true })
-  id!: string;
-
-  @Field({ type: "string", required: true })
-  name!: string;
-
-  @Field({ type: "string", unique: true, required: true })
-  email!: string;
-
-  @Field({ type: "date" })
-  createdAt!: Date;
-
-  @Field({ type: "date" })
-  updatedAt!: Date;
-}
-
-const server = new CrudoraServer({
-  port: 3000,
-  prisma: prisma,
-});
-
-server.registerModel(User).generateRoutes().listen();
 ```
 
 ## Generated API Endpoints
@@ -118,24 +134,107 @@ For each registered model, Crudora automatically generates:
 
 ## Advanced Usage
 
+### Lifecycle Hooks
+
+Crudora supports comprehensive lifecycle hooks for all CRUD operations:
+
+```typescript
+class User extends Model {
+  static tableName = "users";
+  static fillable = ["name", "email", "password"];
+  static hidden = ["password"];
+
+  // Create hooks
+  static async beforeCreate(data: any): Promise<any> {
+    data.password = await hashPassword(data.password);
+    data.createdAt = new Date();
+    return data;
+  }
+
+  static async afterCreate(data: any, result: any): Promise<any> {
+    await sendWelcomeEmail(result.email);
+    await logUserCreation(result.id);
+    return result;
+  }
+
+  // Update hooks
+  static async beforeUpdate(id: string, data: any): Promise<any> {
+    data.updatedAt = new Date();
+    return data;
+  }
+
+  static async afterUpdate(id: string, data: any, result: any): Promise<any> {
+    await logUserUpdate(id, data);
+    return result;
+  }
+
+  // Delete hooks
+  static async beforeDelete(id: string): Promise<void> {
+    await archiveUserData(id);
+  }
+
+  static async afterDelete(id: string, result: any): Promise<any> {
+    await logUserDeletion(id);
+    return result;
+  }
+
+  // Find hooks
+  static async beforeFind(options: any): Promise<any> {
+    // Add default filters
+    options.where = { ...options.where, active: true };
+    return options;
+  }
+
+  static async afterFind(result: any): Promise<any> {
+    // Transform result
+    if (Array.isArray(result)) {
+      return result.map((user) => ({ ...user, displayName: user.name }));
+    }
+    return { ...result, displayName: result.name };
+  }
+}
+```
+
+### Field Security and Dynamic Selection
+
+Crudora automatically handles field security and dynamic selection:
+
+```typescript
+class User extends Model {
+  static tableName = "users";
+  static fillable = ["name", "email", "bio"]; // Only these fields can be mass-assigned
+  static hidden = ["password", "secret"]; // These fields are automatically excluded from responses
+}
+
+// API responses automatically exclude hidden fields
+// Only fillable fields are included in select queries for better performance
+```
+
 ### Using Repositories
 
 ```typescript
 const crudora = server.getCrudora();
 const userRepo = crudora.getRepository(User);
 
-// Create user
+// Create user (triggers beforeCreate and afterCreate hooks)
 const user = await userRepo.create({
   name: "John Doe",
   email: "john@example.com",
+  password: "plaintext", // Will be hashed by beforeCreate hook
 });
+// Response excludes password due to hidden field
 
-// Find users
+// Find users (triggers beforeFind and afterFind hooks)
 const users = await userRepo.findAll({
   skip: 0,
   take: 10,
   where: { active: true },
   orderBy: { createdAt: "desc" },
+});
+
+// Update user (triggers beforeUpdate and afterUpdate hooks)
+const updatedUser = await userRepo.update("user-id", {
+  name: "John Updated",
 });
 
 // Count users
@@ -178,11 +277,43 @@ const partialSchema = crudora.getValidationSchema(User);
 const strictSchema = crudora.getStrictValidationSchema(User);
 ```
 
+## Project Setup
+
+After installing Crudora, run these commands to complete setup:
+
+```bash
+# Install additional dependencies
+npm install @prisma/client prisma dotenv
+
+# Generate Prisma client
+npm run db:generate
+
+# Push database schema
+npm run db:push
+
+# Start development server
+npm run dev
+```
+
+## Available Scripts
+
+Crudora automatically adds these scripts to your package.json:
+
+- `npm run dev` - Start development server with ts-node
+- `npm run build` - Build TypeScript to JavaScript
+- `npm run start` - Start production server from built JavaScript
+- `npm run start:prod` - Build and start production server
+- `npm run db:generate` - Generate Prisma client
+- `npm run db:push` - Push schema to database
+- `npm run db:migrate` - Run database migrations
+- `npm run db:studio` - Open Prisma Studio
+
 ## Documentation
 
 - [API Reference](./docs/api.md)
 - [Model Definition Guide](./docs/models.md)
 - [Custom Routes](./docs/custom-routes.md)
+- [CLI Reference](./docs/cli.md)
 - [Deployment Guide](./docs/deployment.md)
 
 ## Contributing

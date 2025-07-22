@@ -83,7 +83,63 @@ export class Crudora {
   }
 
   // Auto-generate REST API routes
+  // Auto-generate REST API routes
   generateRoutes(app: Express, basePath: string = '/api'): void {
+    // Add API documentation endpoint
+    app.get(basePath, (req, res) => {
+      const routes: any[] = [];
+
+      // Add CRUD routes for each model
+      for (const [modelName, modelClass] of this.models) {
+        const routePath = `${basePath}/${modelClass.getTableName()}`;
+
+        routes.push(
+          {
+            method: 'GET',
+            path: routePath,
+            description: `List all ${modelClass.getTableName()}`,
+            type: 'CRUD'
+          },
+          {
+            method: 'GET',
+            path: `${routePath}/:id`,
+            description: `Get ${modelClass.getTableName()} by ID`,
+            type: 'CRUD'
+          },
+          {
+            method: 'POST',
+            path: routePath,
+            description: `Create new ${modelClass.getTableName()}`,
+            type: 'CRUD'
+          },
+          {
+            method: 'PUT',
+            path: `${routePath}/:id`,
+            description: `Update ${modelClass.getTableName()} by ID`,
+            type: 'CRUD'
+          },
+          {
+            method: 'DELETE',
+            path: `${routePath}/:id`,
+            description: `Delete ${modelClass.getTableName()} by ID`,
+            type: 'CRUD'
+          }
+        );
+      }
+
+      // Add custom routes
+      for (const route of this.customRoutes) {
+        routes.push({
+          method: route.method,
+          path: `${basePath}${route.path}`,
+          description: `Custom ${route.method} route`,
+          type: 'Custom'
+        });
+      }
+
+      res.json({ routes });
+    });
+
     // Generate CRUD routes for models
     for (const [modelName, modelClass] of this.models) {
       const repository = this.getRepository(modelClass);
@@ -131,11 +187,11 @@ export class Crudora {
         }
       });
 
-      // POST /api/model - Create (gunakan strict validation)
+      // POST /api/model - Create
       app.post(routePath, async (req, res) => {
         try {
-          const strictValidationSchema = this.getStrictValidationSchema(modelClass);
-          const validatedData = strictValidationSchema.parse(req.body);
+          // Gunakan partial validation schema instead of strict
+          const validatedData = validationSchema.parse(req.body);
           const item = await repository.create(validatedData);
           res.status(201).json(item);
         } catch (error) {

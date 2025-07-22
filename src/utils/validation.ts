@@ -1,75 +1,39 @@
 import { z } from 'zod';
-import { getFieldMetadata } from '../decorators/model';
-import { FieldOptions } from '../types/model.type';
+import { Model, ModelConstructor } from '../core/model';
 
 export class ValidationGenerator {
-  static generateZodSchema<T>(modelClass: new () => T): z.ZodType<Partial<T>> {
-    const fieldMetadata = getFieldMetadata(modelClass);
+  static generateZodSchema<T extends Model>(modelClass: ModelConstructor<T>): z.ZodType<Partial<T>> {
+    // Simplified: gunakan static properties langsung dari model class
+    const fillable = modelClass.fillable || [];
     const schemaFields: Record<string, z.ZodTypeAny> = {};
 
-    // If no field metadata, return empty partial schema
-    if (Object.keys(fieldMetadata).length === 0) {
-      return z.object({}).partial() as z.ZodType<Partial<T>>;
+    // Jika tidak ada fillable fields, return empty partial schema
+    if (fillable.length === 0) {
+      return z.object({}).partial() as any;
     }
 
-    for (const [fieldName, options] of Object.entries(fieldMetadata) as [string, FieldOptions][]) {
-      schemaFields[fieldName] = this.createZodField(options);
-    }
+    // Generate basic string validation untuk semua fillable fields
+    fillable.forEach(fieldName => {
+      schemaFields[fieldName] = z.string().optional();
+    });
 
-    return z.object(schemaFields).partial() as z.ZodType<Partial<T>>;
+    return z.object(schemaFields).partial() as any;
   }
 
-  static generateStrictZodSchema<T>(modelClass: new () => T): z.ZodType<T> {
-    const fieldMetadata = getFieldMetadata(modelClass);
+  static generateStrictZodSchema<T extends Model>(modelClass: ModelConstructor<T>): z.ZodType<any> {
+    const fillable = modelClass.fillable || [];
     const schemaFields: Record<string, z.ZodTypeAny> = {};
 
-    // If no field metadata, return empty schema
-    if (Object.keys(fieldMetadata).length === 0) {
-      return z.object({}) as z.ZodType<T>;
+    // Jika tidak ada fillable fields, return empty schema
+    if (fillable.length === 0) {
+      return z.object({}) as any;
     }
 
-    for (const [fieldName, options] of Object.entries(fieldMetadata) as [string, FieldOptions][]) {
-      // For strict schema, skip primary key fields that are auto-generated
-      if (options.primary && options.type === 'uuid') {
-        continue;
-      }
-      schemaFields[fieldName] = this.createZodField(options);
-    }
+    // Generate basic string validation untuk semua fillable fields
+    fillable.forEach(fieldName => {
+      schemaFields[fieldName] = z.string();
+    });
 
-    return z.object(schemaFields) as z.ZodType<T>;
-  }
-
-  private static createZodField(options: FieldOptions): z.ZodTypeAny {
-    let field: z.ZodTypeAny;
-
-    switch (options.type) {
-      case 'string':
-        field = z.string();
-        if (options.length) {
-          field = (field as z.ZodString).max(options.length);
-        }
-        break;
-      case 'number':
-        field = z.number();
-        break;
-      case 'boolean':
-        field = z.boolean();
-        break;
-      case 'date':
-        field = z.date();
-        break;
-      case 'uuid':
-        field = z.string().uuid();
-        break;
-      default:
-        field = z.string();
-    }
-
-    // If required is explicitly false, make field optional
-    if (options.required === false) {
-      field = field.optional();
-    }
-
-    return field;
+    return z.object(schemaFields) as any;
   }
 }

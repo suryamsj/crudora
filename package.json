@@ -1,14 +1,19 @@
 {
   "name": "crudora",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "type": "module",
+  "bin": {
+    "crudora": "./bin/crudora.js"
+  },
   "files": [
     "dist",
     "README.md",
     "LICENSE",
     "templates",
-    "scripts"
+    "scripts",
+    "bin"
   ],
   "scripts": {
     "build": "tsc && node scripts/copy-assets.js",
@@ -23,7 +28,7 @@
     "test:coverage": "jest --coverage",
     "lint": "eslint src/**/*.ts",
     "format": "prettier --write src/**/*.ts",
-    "postinstall": "node scripts/postinstall.js"
+    "postinstall": "node scripts/postinstall.js || echo 'Postinstall script failed, but continuing...'"
   },
   "keywords": [
     "crud",
@@ -56,7 +61,9 @@
   "description": "TypeScript framework for automated CRUD API generation with Prisma and Express",
   "dependencies": {
     "@types/express": "^5.0.3",
+    "commander": "^14.0.0",
     "express": "^5.1.0",
+    "jest-mock-extended": "^4.0.0",
     "reflect-metadata": "^0.2.2",
     "zod": "^4.0.5"
   },

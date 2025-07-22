@@ -59,10 +59,12 @@ NODE_ENV=development
 
 ```json
 {
+  "type": "module",
   "scripts": {
     "dev": "ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:prod": "npm run build && npm run start",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev"
@@ -73,7 +75,6 @@ NODE_ENV=development
 ## Stay Updated
 
 - ⭐ Star this repository to get notified of updates
-- 📖 Check our [roadmap](../README.md#roadmap-timeline) for development progress
 - 🐛 Report issues on [GitHub Issues](https://github.com/suryamsj/crudora/issues)
 
 ## Early Access

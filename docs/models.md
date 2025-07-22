@@ -1,12 +1,8 @@
 # Model Definition Guide
 
-Crudora supports two approaches for defining models: **Inheritance Pattern** (recommended) and **Decorator Pattern**.
+Crudora uses an **Inheritance Pattern** for defining models, providing a clean and simple approach similar to other ORMs.
 
-## Inheritance Pattern (Recommended)
-
-The inheritance pattern provides a clean, simple way to define models similar to other ORMs.
-
-### Basic Model Definition
+## Basic Model Definition
 
 ```typescript
 import { Model } from "crudora";
@@ -27,9 +23,9 @@ class Post extends Model {
 }
 ```
 
-### Model Configuration Options
+## Model Configuration Options
 
-#### tableName
+### tableName
 
 Specifies the database table name. **Required** for proper route generation.
 
@@ -39,7 +35,7 @@ class User extends Model {
 }
 ```
 
-#### primaryKey
+### primaryKey
 
 Specifies the primary key field. Defaults to 'id'.
 
@@ -50,7 +46,7 @@ class User extends Model {
 }
 ```
 
-#### timestamps
+### timestamps
 
 Enables automatic timestamp fields (createdAt, updatedAt). Defaults to true.
 
@@ -61,7 +57,7 @@ class User extends Model {
 }
 ```
 
-#### fillable
+### fillable
 
 Specifies which fields can be mass-assigned during create/update operations.
 
@@ -72,7 +68,7 @@ class User extends Model {
 }
 ```
 
-#### hidden
+### hidden
 
 Specifies fields that should be hidden from API responses.
 
@@ -83,7 +79,7 @@ class User extends Model {
 }
 ```
 
-### TypeScript Interface Integration
+## TypeScript Interface Integration
 
 For better type safety, you can define TypeScript interfaces alongside your models:
 
@@ -108,193 +104,126 @@ class User extends Model implements IUser {
 }
 ```
 
-## Decorator Pattern
+## Lifecycle Hooks
 
-The decorator pattern provides more explicit field definitions with metadata and automatic validation schema generation.
-
-### Basic Usage
+Crudora supports comprehensive lifecycle hooks for all CRUD operations:
 
 ```typescript
-import { Model, Field } from "crudora";
+class User extends Model {
+  static tableName = "users";
+  static fillable = ["name", "email", "password"];
+  static hidden = ["password"];
 
-@Model({ tableName: "users" })
-class User {
-  @Field({ type: "uuid", primary: true })
+  // Create hooks
+  static async beforeCreate(data: any): Promise<any> {
+    data.password = await hashPassword(data.password);
+    data.createdAt = new Date();
+    return data;
+  }
+
+  static async afterCreate(data: any, result: any): Promise<any> {
+    await sendWelcomeEmail(result.email);
+    await logUserCreation(result.id);
+    return result;
+  }
+
+  // Update hooks
+  static async beforeUpdate(id: string, data: any): Promise<any> {
+    data.updatedAt = new Date();
+    return data;
+  }
+
+  static async afterUpdate(id: string, data: any, result: any): Promise<any> {
+    await logUserUpdate(id, data);
+    return result;
+  }
+
+  // Delete hooks
+  static async beforeDelete(id: string): Promise<void> {
+    await archiveUserData(id);
+  }
+
+  static async afterDelete(id: string, result: any): Promise<any> {
+    await logUserDeletion(id);
+    return result;
+  }
+
+  // Find hooks
+  static async beforeFind(options: any): Promise<any> {
+    // Add default filters
+    options.where = { ...options.where, active: true };
+    return options;
+  }
+
+  static async afterFind(result: any): Promise<any> {
+    // Transform result
+    if (Array.isArray(result)) {
+      return result.map(user => ({ ...user, displayName: user.name }));
+    }
+    return { ...result, displayName: result.name };
+  }
+}
+```
+
+## Complete Example
+
+```typescript
+import { Model } from "crudora";
+
+interface IUser {
+  id: string;
+  name: string;
+  email: string;
+  password?: string;
+  age?: number;
+  isActive?: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+class User extends Model implements IUser {
+  static tableName = "users";
+  static primaryKey = "id";
+  static timestamps = true;
+  static fillable = ["name", "email", "password", "age", "isActive"];
+  static hidden = ["password"];
+
   id!: string;
-
-  @Field({ type: "string", required: true })
   name!: string;
-
-  @Field({ type: "string", unique: true, required: true })
   email!: string;
-
-  @Field({ type: "string", required: false })
-  password!: string;
-
-  @Field({ type: "date" })
+  password?: string;
+  age?: number;
+  isActive?: boolean;
   createdAt!: Date;
-
-  @Field({ type: "date" })
   updatedAt!: Date;
+
+  static async beforeCreate(data: any): Promise<any> {
+    if (data.password) {
+      data.password = await hashPassword(data.password);
+    }
+    return data;
+  }
 }
-```
 
-### Model Decorator Options
+class Post extends Model {
+  static tableName = "posts";
+  static primaryKey = "id";
+  static fillable = ["title", "content", "authorId", "published"];
+  static hidden = ["deletedAt"];
 
-```typescript
-@Model({
-  tableName: "users",    // Required: table name
-  timestamps: true       // Optional: enable timestamps (default: true)
-})
-class User {
-  // ... fields
-}
-```
-
-### Field Types
-
-Supported field types in the decorator pattern:
-
-#### String Fields
-
-```typescript
-@Field({ type: "string", required: true, length: 255 })
-name!: string;
-
-@Field({ type: "string", required: false })
-description!: string;
-```
-
-#### Numeric Fields
-
-```typescript
-@Field({ type: "number", required: true })
-age!: number;
-
-@Field({ type: "number", required: false })
-price!: number;
-```
-
-#### Boolean Fields
-
-```typescript
-@Field({ type: "boolean", required: false })
-isActive!: boolean;
-```
-
-#### Date Fields
-
-```typescript
-@Field({ type: "date" })
-createdAt!: Date;
-
-@Field({ type: "date" })
-birthDate!: Date;
-```
-
-#### UUID Fields
-
-```typescript
-@Field({ type: "uuid", primary: true })
-id!: string;
-
-@Field({ type: "uuid", required: true })
-userId!: string;
-```
-
-### Field Options
-
-Available options for `@Field` decorator:
-
-```typescript
-@Field({
-  type: "string",        // Field data type (required)
-  required: true,        // Whether field is required (default: true)
-  unique: false,         // Whether field must be unique (default: false)
-  primary: false,        // Whether field is primary key (default: false)
-  default: undefined,    // Default value
-  length: undefined      // Maximum length for string fields
-})
-```
-
-### Complete Example
-
-```typescript
-import "reflect-metadata";
-import { Model, Field } from "crudora";
-
-@Model({ tableName: "users" })
-class User {
-  @Field({ type: "uuid", primary: true })
   id!: string;
-
-  @Field({ type: "string", required: true, length: 100 })
-  name!: string;
-
-  @Field({ type: "string", required: true, unique: true, length: 255 })
-  email!: string;
-
-  @Field({ type: "string", required: false })
-  password!: string;
-
-  @Field({ type: "number", required: false })
-  age!: number;
-
-  @Field({ type: "boolean", required: false })
-  isActive!: boolean;
-
-  @Field({ type: "date" })
-  createdAt!: Date;
-
-  @Field({ type: "date" })
-  updatedAt!: Date;
-}
-
-@Model({ tableName: "posts" })
-class Post {
-  @Field({ type: "uuid", primary: true })
-  id!: string;
-
-  @Field({ type: "string", required: true, length: 200 })
   title!: string;
-
-  @Field({ type: "string", required: true })
   content!: string;
-
-  @Field({ type: "uuid", required: true })
   authorId!: string;
-
-  @Field({ type: "boolean", required: false })
-  published!: boolean;
-
-  @Field({ type: "date" })
+  published?: boolean;
   createdAt!: Date;
-
-  @Field({ type: "date" })
   updatedAt!: Date;
 }
-```
-
-## Validation
-
-When using the decorator pattern, Crudora automatically generates Zod validation schemas based on your field definitions:
-
-```typescript
-// Automatic validation for API endpoints
-// - POST requests use strict validation (all required fields)
-// - PUT requests use partial validation (all fields optional)
-
-// You can also access the schemas programmatically:
-const crudora = new Crudora(prisma);
-crudora.registerModel(User);
-
-const partialSchema = crudora.getValidationSchema(User);
-const strictSchema = crudora.getStrictValidationSchema(User);
 ```
 
 ## Schema Generation
 
-Both patterns support automatic Prisma schema generation:
+Crudora supports automatic Prisma schema generation:
 
 ```typescript
 const crudora = new Crudora(prisma);
@@ -313,21 +242,21 @@ This will generate a complete Prisma schema with:
 
 ## Best Practices
 
-1. **Use inheritance pattern** for simple models without complex validation
-2. **Use decorator pattern** when you need automatic validation and detailed field metadata
-3. **Always specify tableName** explicitly
-4. **Use TypeScript interfaces** for better type safety
-5. **Import reflect-metadata** when using decorators
-6. **Keep field names consistent** with your database schema
+1. **Always specify tableName** explicitly
+2. **Use TypeScript interfaces** for better type safety
+3. **Keep field names consistent** with your database schema
+4. **Use lifecycle hooks** for business logic and data transformation
+5. **Configure fillable and hidden fields** appropriately for security
+6. **Implement proper validation** in lifecycle hooks
 
 ## Model Type Definitions
 
-Untuk type safety yang lebih baik, gunakan ModelConstructor type:
+For better type safety, use ModelConstructor type:
 
 ```typescript
 import { Model, ModelConstructor } from "crudora";
 
-// Definisi dengan type safety
+// Definition with type safety
 const registerModels = <T extends Model>(...models: ModelConstructor<T>[]) => {
   return crudora.registerModel(...models);
 };

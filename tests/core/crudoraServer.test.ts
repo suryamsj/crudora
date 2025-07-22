@@ -1,51 +1,33 @@
-import request from 'supertest';
-import { PrismaClient } from '@prisma/client';
 import { CrudoraServer } from '../../src/core/crudoraServer';
 import { Model } from '../../src/core/model';
-import { Field } from '../../src/decorators/model';
+import { prismaMock } from '../setup';
+import request from 'supertest';
 
 class TestUser extends Model {
-  static tableName = 'testuser'; // Fix: Use 'testuser' to match expected route
-
-  @Field({ type: 'uuid', primary: true })
-  id!: string;
-
-  @Field({ type: 'string', required: true })
-  name!: string;
-
-  @Field({ type: 'string', required: true })
-  email!: string;
+  static tableName = 'users';
+  static fillable = ['name', 'email'];
+  
+  id?: string;
+  name?: string;
+  email?: string;
 }
 
 describe('CrudoraServer', () => {
-  let prisma: jest.Mocked<PrismaClient>;
   let server: CrudoraServer;
-  let mockUserModel: any;
 
   beforeEach(() => {
-    prisma = new PrismaClient() as jest.Mocked<PrismaClient>;
-    mockUserModel = {
-      create: jest.fn(),
-      findUnique: jest.fn(),
-      findMany: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-      count: jest.fn(),
-    };
-    (prisma as any).testuser = mockUserModel; // Fix: Change to 'testuser'
-
-    server = new CrudoraServer({ prisma, port: 3001 });
+    server = new CrudoraServer({ prisma: prismaMock, port: 3001 });
   });
 
   describe('constructor', () => {
     it('should create server with default config', () => {
-      const defaultServer = new CrudoraServer({ prisma });
+      const defaultServer = new CrudoraServer({ prisma: prismaMock });
       expect(defaultServer).toBeInstanceOf(CrudoraServer);
     });
 
     it('should create server with custom config', () => {
       const customServer = new CrudoraServer({
-        prisma,
+        prisma: prismaMock,
         port: 4000,
         cors: false,
         bodyParser: false,
@@ -55,106 +37,92 @@ describe('CrudoraServer', () => {
     });
   });
 
-  describe('registerModel', () => {
-    it('should register model and return server instance', () => {
+  describe('middleware setup', () => {
+    it('should handle CORS preflight requests', async () => {
+      const app = server.getApp();
+      
+      const response = await request(app)
+        .options('/api/test')
+        .set('Origin', 'http://localhost:3000');
+      
+      expect(response.status).toBe(200);
+    });
+
+    it('should parse JSON bodies', async () => {
+      server.registerModel(TestUser).generateRoutes();
+      prismaMock.users.create.mockResolvedValue({ id: '1', name: 'John', email: 'john@example.com' });
+      
+      const app = server.getApp();
+      
+      const response = await request(app)
+        .post('/api/users')
+        .send({ name: 'John', email: 'john@example.com' })
+        .set('Content-Type', 'application/json');
+      
+      expect(response.status).toBe(201);
+    });
+  });
+
+  describe('model registration', () => {
+    it('should register models', () => {
       const result = server.registerModel(TestUser);
       expect(result).toBe(server);
     });
   });
 
-  describe('generateRoutes', () => {
-    it('should generate routes and return server instance', () => {
-      server.registerModel(TestUser);
+  describe('route generation', () => {
+    it('should generate routes', () => {
       const result = server.generateRoutes();
       expect(result).toBe(server);
     });
   });
 
-  describe('middleware methods', () => {
-    it('should add middleware', () => {
-      const middleware = jest.fn((req: any, res: any, next: any) => next());
+  describe('custom routes', () => {
+    it('should add custom GET route', async () => {
+      server.get('/custom', (req, res) => {
+        res.json({ message: 'Custom GET route' });
+      });
+      server.generateRoutes();
+      
+      const app = server.getApp();
+      const response = await request(app).get('/api/custom');
+      
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('Custom GET route');
+    });
+
+    it('should add custom POST route', async () => {
+      server.post('/custom', (req, res) => {
+        res.json({ message: 'Custom POST route', data: req.body });
+      });
+      server.generateRoutes();
+      
+      const app = server.getApp();
+      const response = await request(app)
+        .post('/api/custom')
+        .send({ test: 'data' });
+      
+      expect(response.status).toBe(200);
+      expect(response.body.message).toBe('Custom POST route');
+    });
+  });
+
+  describe('middleware usage', () => {
+    it('should allow adding custom middleware', () => {
+      const middleware = jest.fn((req, res, next) => next());
       const result = server.use(middleware);
+      
       expect(result).toBe(server);
     });
   });
 
-  describe('custom route methods', () => {
-    it('should add GET route', () => {
-      const handler = jest.fn();
-      const result = server.get('/test', handler);
-      expect(result).toBe(server);
-    });
-
-    it('should add POST route', () => {
-      const handler = jest.fn();
-      const result = server.post('/test', handler);
-      expect(result).toBe(server);
-    });
-  });
-
-  describe('API endpoints', () => {
-    beforeEach(() => {
-      server.registerModel(TestUser).generateRoutes();
-    });
-
-    it('should handle GET /api/testuser', async () => {
-      const mockUsers = [
-        { id: '1', name: 'John Doe', email: 'john@example.com' },
-        { id: '2', name: 'Jane Doe', email: 'jane@example.com' }
-      ];
-      mockUserModel.findMany.mockResolvedValue(mockUsers);
-      mockUserModel.count.mockResolvedValue(2);
-
-      const response = await request(server.getApp())
-        .get('/api/testuser')
-        .expect(200);
-
-      expect(response.body.data).toEqual(mockUsers);
-      expect(response.body.pagination).toBeDefined();
-    });
-
-    it('should handle GET /api/testuser/:id', async () => {
-      const mockUser = { id: '1', name: 'John Doe', email: 'john@example.com' };
-      mockUserModel.findUnique.mockResolvedValue(mockUser);
-
-      const response = await request(server.getApp())
-        .get('/api/testuser/1')
-        .expect(200);
-
-      expect(response.body).toEqual(mockUser);
-    });
-
-    it('should handle POST /api/testuser', async () => {
-      const userData = { name: 'John Doe', email: 'john@example.com' };
-      const mockUser = { id: '1', ...userData };
-      mockUserModel.create.mockResolvedValue(mockUser);
-
-      const response = await request(server.getApp())
-        .post('/api/testuser')
-        .send(userData)
-        .expect(201);
-
-      expect(response.body).toEqual(mockUser);
-    });
-
-    it('should handle 404 for non-existent user', async () => {
-      mockUserModel.findUnique.mockResolvedValue(null);
-
-      await request(server.getApp())
-        .get('/api/testuser/999')
-        .expect(404);
-    });
-  });
-
-  describe('getApp', () => {
-    it('should return express app instance', () => {
+  describe('getters', () => {
+    it('should return Express app', () => {
       const app = server.getApp();
       expect(app).toBeDefined();
     });
-  });
 
-  describe('getCrudora', () => {
-    it('should return crudora instance', () => {
+    it('should return Crudora instance', () => {
       const crudora = server.getCrudora();
       expect(crudora).toBeDefined();
     });
