@@ -313,7 +313,6 @@ Crudora automatically adds these scripts to your package.json:
 - [API Reference](./docs/api.md)
 - [Model Definition Guide](./docs/models.md)
 - [Custom Routes](./docs/custom-routes.md)
-- [CLI Reference](./docs/cli.md)
 - [Deployment Guide](./docs/deployment.md)
 
 ## Contributing

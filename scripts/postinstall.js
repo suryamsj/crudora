@@ -99,8 +99,14 @@ if (fs.existsSync(targetPackagePath)) {
 
     // Add useful scripts if they don't exist
     const scriptsToAdd = {
+      'build': 'tsc',
       'dev': 'ts-node src/server.ts',
       'start': 'ts-node src/server.ts',
+      'start:prod': 'node dist/index.js',
+      'db:generate': 'prisma generate',
+      'db:push': 'prisma db push',
+      'db:migrate': 'prisma migrate dev',
+      'db:studio': 'prisma studio'
     };
 
     let scriptsAdded = false;

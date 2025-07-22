@@ -1,19 +1,14 @@
 {
   "name": "crudora",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "type": "module",
-  "bin": {
-    "crudora": "./bin/crudora.js"
-  },
   "files": [
     "dist",
     "README.md",
     "LICENSE",
     "templates",
-    "scripts",
-    "bin"
+    "scripts"
   ],
   "scripts": {
     "build": "tsc && node scripts/copy-assets.js",
