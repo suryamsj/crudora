@@ -1,0 +1,15 @@
+# Default
+.env
+.env.test
+.env.prod
+
+# Node
+/node_modules
+
+# Prisma
+/src/generated/prisma
+/prisma/migrations
+/prisma/dev.db
+
+# Output
+/dist

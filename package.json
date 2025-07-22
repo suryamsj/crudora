@@ -1,0 +1,82 @@
+{
+  "name": "crudora",
+  "version": "0.1.0-alpha.1",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "templates",
+    "scripts"
+  ],
+  "scripts": {
+    "build": "tsc && node scripts/copy-assets.js",
+    "copy-assets": "node scripts/copy-assets.js",
+    "build:watch": "tsc --watch",
+    "clean": "rimraf dist",
+    "prebuild": "npm run clean",
+    "prepublishOnly": "npm run build",
+    "dev": "ts-node src/index.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write src/**/*.ts",
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "keywords": [
+    "crud",
+    "api",
+    "typescript",
+    "prisma",
+    "express",
+    "framework",
+    "backend",
+    "rest-api",
+    "orm",
+    "validation",
+    "zod",
+    "decorators",
+    "auto-generation"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/suryamsj/crudora.git"
+  },
+  "bugs": {
+    "url": "https://github.com/suryamsj/crudora/issues"
+  },
+  "homepage": "https://github.com/suryamsj/crudora#readme",
+  "author": {
+    "name": "Muhammad Surya J",
+    "url": "https://suryamsj.my.id"
+  },
+  "license": "MIT",
+  "description": "TypeScript framework for automated CRUD API generation with Prisma and Express",
+  "dependencies": {
+    "@types/express": "^5.0.3",
+    "express": "^5.1.0",
+    "reflect-metadata": "^0.2.2",
+    "zod": "^4.0.5"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.0.15",
+    "@types/supertest": "^6.0.3",
+    "@typescript-eslint/eslint-plugin": "^8.38.0",
+    "@typescript-eslint/parser": "^8.38.0",
+    "eslint": "^9.31.0",
+    "jest": "^30.0.4",
+    "prettier": "^3.6.2",
+    "rimraf": "^6.0.1",
+    "supertest": "^7.1.3",
+    "ts-jest": "^29.4.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  },
+  "peerDependencies": {
+    "@prisma/client": "^6.12.0",
+    "prisma": "^6.12.0"
+  }
+}
