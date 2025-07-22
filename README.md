@@ -20,9 +20,9 @@ Automatic CRUD API generator for TypeScript with Prisma - Build REST APIs in min
 ## Installation
 
 ```bash
-npm install crudora prisma @prisma/client reflect-metadata
+npm install crudora prisma @prisma/client
 # or
-yarn add crudora prisma @prisma/client reflect-metadata
+yarn add crudora prisma @prisma/client
 ```
 
 ## Quick Start
@@ -54,21 +54,20 @@ const server = new CrudoraServer({
   port: 3000,
   prisma: prisma,
   cors: true,
-  basePath: "/api"
+  basePath: "/api",
 });
 
 server
   .registerModel(User, Post)
   .generateRoutes()
   .listen(() => {
-    console.log('Server running on port 3000');
+    console.log("Server running on port 3000");
   });
 ```
 
 ### Method 2: Decorator Pattern
 
 ```typescript
-import "reflect-metadata";
 import { CrudoraServer, Model, Field } from "crudora";
 import { PrismaClient } from "@prisma/client";
 
@@ -97,10 +96,7 @@ const server = new CrudoraServer({
   prisma: prisma,
 });
 
-server
-  .registerModel(User)
-  .generateRoutes()
-  .listen();
+server.registerModel(User).generateRoutes().listen();
 ```
 
 ## Generated API Endpoints
@@ -131,7 +127,7 @@ const userRepo = crudora.getRepository(User);
 // Create user
 const user = await userRepo.create({
   name: "John Doe",
-  email: "john@example.com"
+  email: "john@example.com",
 });
 
 // Find users
@@ -139,7 +135,7 @@ const users = await userRepo.findAll({
   skip: 0,
   take: 10,
   where: { active: true },
-  orderBy: { createdAt: 'desc' }
+  orderBy: { createdAt: "desc" },
 });
 
 // Count users

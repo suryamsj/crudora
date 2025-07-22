@@ -112,14 +112,6 @@ class User extends Model implements IUser {
 
 The decorator pattern provides more explicit field definitions with metadata and automatic validation schema generation.
 
-### Setup
-
-First, ensure you import `reflect-metadata` at the top of your application:
-
-```typescript
-import "reflect-metadata";
-```
-
 ### Basic Usage
 
 ```typescript

@@ -391,7 +391,7 @@ Delete a record.
 ```bash
 npm install crudora@0.1.0-alpha.1
 # Dependencies yang diperlukan:
-npm install @prisma/client prisma express zod
+npm install @prisma/client prisma
 ```
 
 **Current Version**: 0.1.0-alpha.1
