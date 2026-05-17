@@ -119,6 +119,8 @@ interface CrudoraServerConfig {
   basePath?: string;                    // default: '/api'
   logger?: CrudoraLogger | false;       // default: built-in structured JSON logger
   rateLimit?: RateLimitConfig | false;  // default: 100 req/min per IP
+  timeout?: number;                     // socket timeout in ms; 503 on expiry. default: 0 (disabled)
+  healthCheck?: boolean | string;       // default: true → GET /health; string = custom path; false = disabled
 }
 
 interface RateLimitConfig {
@@ -150,6 +152,8 @@ interface RateLimitConfig {
 - `RateLimitConfig` — custom window / limit / key function
 - `false` — disable rate limiting (e.g. when an upstream proxy handles it)
 
+> **Multi-instance note:** The built-in rate limiter is in-memory and per-process. Behind a load balancer each instance tracks its own counter independently. Use a Redis-backed limiter and set `rateLimit: false` for distributed deployments.
+
 Rate-limited responses include standard headers:
 ```
 X-RateLimit-Limit: 100
@@ -157,6 +161,15 @@ X-RateLimit-Remaining: 42
 X-RateLimit-Reset: 1720000000   ← Unix timestamp (seconds)
 Retry-After: 60                 ← only on 429
 ```
+
+**`timeout` options:**
+- `0` (default) — no timeout; handlers may run indefinitely
+- `30_000` — terminate the request with `503 Request timed out` after 30 seconds
+
+**`healthCheck` options:**
+- `true` (default) — mount `GET /health` returning `{ success: true, data: { status: 'ok', timestamp } }`
+- `'/healthz'` — mount on a custom path
+- `false` — disable entirely
 
 ### Methods
 
@@ -188,11 +201,41 @@ server.use(cors())
 
 #### listen(callback?)
 
-Starts the HTTP server.
+Starts the HTTP server and returns the underlying `http.Server` instance.
 
 ```typescript
-server.listen(() => console.log('Server started'))
+const httpServer = server.listen(() => console.log('Server started'));
+
+// Graceful shutdown
+process.on('SIGTERM', () => httpServer.close(() => process.exit(0)));
 ```
+
+**Returns:** `http.Server`
+
+#### getHttpServer()
+
+Returns the `http.Server` instance after `listen()` has been called, or `null` before.
+
+```typescript
+const httpServer = server.getHttpServer(); // null before listen()
+server.listen();
+const httpServer = server.getHttpServer(); // http.Server after listen()
+```
+
+**Returns:** `http.Server | null`
+
+#### getTable(modelClass)
+
+Returns the Drizzle table object for a registered model. Use when you need raw DB access to columns excluded by `static hidden` (e.g. reading a password hash in a login route).
+
+```typescript
+const usersTable = server.getTable(User);
+const [row] = await db.select().from(usersTable).where(eq(usersTable.email, email)).limit(1);
+```
+
+**Throws** if the model was not registered.
+
+**Returns:** Drizzle table object
 
 #### getApp()
 

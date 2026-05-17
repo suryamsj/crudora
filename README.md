@@ -22,6 +22,9 @@ Automatic CRUD API generator for TypeScript with Drizzle ORM — build REST APIs
 - **Lifecycle Hooks** — `beforeCreate`, `afterCreate`, `afterCreateMany`, `beforeUpdate`, `afterUpdate`, `beforeDelete`, `afterDelete`, `beforeFind`, `afterFind`
 - **Structured Logging** — pluggable `CrudoraLogger` with correlation IDs per request; compatible with pino, winston
 - **Field Security** — `hidden` fields stripped at query time via `getTableColumns()`
+- **Request Timeout** — built-in socket-level timeout middleware; returns `503` when a handler exceeds the configured limit
+- **Health Check** — built-in `GET /health` endpoint; configurable path or disable entirely
+- **Graceful Shutdown** — `listen()` returns the underlying `http.Server` for clean SIGTERM handling
 - **Standardized Responses** — all endpoints return `{ success, data, meta?, error? }` OpenAPI-style envelope
 - **Schema Generator** — auto-generate Drizzle TypeScript schema files from models
 - **TypeScript First** — full type safety, ESM and CJS dual build
@@ -92,12 +95,21 @@ class User extends Model {
   }
 }
 
-const server = new CrudoraServer({ db, dialect: 'postgresql', port: 3000 });
+const server = new CrudoraServer({
+  db,
+  dialect:     'postgresql',
+  port:        3000,
+  timeout:     30_000,   // 503 after 30 s with no response
+  healthCheck: true,     // GET /health → { status: 'ok' }
+});
 
-server
+const httpServer = server
   .registerModel(User)
   .generateRoutes()
   .listen();
+
+// Graceful shutdown
+process.on('SIGTERM', () => httpServer.close(() => process.exit(0)));
 ```
 
 ## Generated API Endpoints
@@ -473,9 +485,6 @@ npx crudora generate-schema --entry src/server.ts --output src/db/schema.ts
 
 ```typescript
 server
-  .get('/health', (_req, res) => {
-    res.json({ success: true, data: { status: 'ok', timestamp: new Date() } });
-  })
   .post('/auth/login', async (req, res) => {
     const { email, password } = req.body;
     const userRepo = server.getCrudora().getRepository(User);

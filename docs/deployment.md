@@ -84,18 +84,22 @@ const server = new CrudoraServer({
   cors:            true,
   basePath:        '/api',
   bodyParserLimit: '1mb',           // increase for bulk payloads; keep low otherwise
+  timeout:         30_000,          // 503 after 30 s with no response
+  healthCheck:     true,            // GET /health → { status: 'ok' }
   rateLimit: {                      // built-in sliding-window rate limiter
     windowMs: 60_000,               // 1 minute
     max:      100,                  // 100 requests per minute per IP
   },
 });
 
-server
+const httpServer = server
   .registerModel(User)
   .generateRoutes()
   .listen(() => {
     console.log(`Server running on port ${process.env.PORT || 3000}`);
   });
+
+process.on('SIGTERM', () => httpServer.close(() => process.exit(0)));
 ```
 
 ---
@@ -518,6 +522,45 @@ new CrudoraServer({ db, dialect: 'postgresql', rateLimit: false });
 
 ---
 
+## Request Timeout
+
+Crudora includes a built-in socket-level timeout middleware. Requests that exceed the limit are terminated with a `503 Request timed out` response before the connection is kept open indefinitely.
+
+```typescript
+new CrudoraServer({
+  db,
+  dialect: 'postgresql',
+  timeout: 30_000,  // 503 after 30 seconds. Default: 0 (disabled)
+});
+```
+
+**When to use:**
+- Set `timeout: 30_000` (30 s) for most REST APIs — prevents slow DB queries from holding connections open
+- Set `timeout: 0` (default) only if you have an upstream proxy (nginx, ALB) that handles timeouts
+
+The timeout applies to the full request lifecycle: body parsing, route handling, and DB queries.
+
+---
+
+## Health Check
+
+Crudora mounts a health check endpoint automatically:
+
+```typescript
+// Default: GET /health → { success: true, data: { status: 'ok', timestamp: '...' } }
+new CrudoraServer({ db, dialect: 'postgresql' });
+
+// Custom path
+new CrudoraServer({ db, dialect: 'postgresql', healthCheck: '/healthz' });
+
+// Disable
+new CrudoraServer({ db, dialect: 'postgresql', healthCheck: false });
+```
+
+Use this with your load balancer or orchestrator (ELB, Kubernetes liveness probe, etc.).
+
+---
+
 ## Request Body Size
 
 ```typescript
@@ -545,10 +588,13 @@ Requests exceeding the limit are rejected with `413 Payload Too Large` before re
 - [ ] `logger: false` or custom logger configured (no sensitive data in logs)
 - [ ] `static hidden` set on all models with sensitive columns (`password`, tokens)
 - [ ] Database migrations run before deploying new schema changes (`db:migrate`)
-- [ ] Graceful shutdown handler registered (drain connections on SIGTERM)
-- [ ] Health check endpoint exposed (`/health`)
+- [ ] `timeout` set (recommended: `30_000`) to prevent slow requests from holding connections open
+- [ ] Graceful shutdown handler registered — `listen()` returns `http.Server`; close it on SIGTERM
+- [ ] Health check endpoint configured (`healthCheck: true` or a custom path)
 
 ### Graceful Shutdown
+
+`listen()` returns the underlying `http.Server`. Use it to drain existing connections before exiting:
 
 ```typescript
 const server = new CrudoraServer({ db, dialect: 'postgresql' });
