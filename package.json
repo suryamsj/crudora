@@ -1,6 +1,6 @@
 {
   "name": "crudora",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -10,9 +10,9 @@
   },
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "require": "./dist/index.cjs",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.cjs"
     },
     "./package.json": "./package.json"
   },
@@ -24,7 +24,7 @@
     "scripts"
   ],
   "scripts": {
-    "build": "tsc && tsc -p tsconfig.cli.json && node scripts/copy-assets.js",
+    "build": "tsup && node scripts/copy-assets.js",
     "copy-assets": "node scripts/copy-assets.js",
     "build:watch": "tsc --watch",
     "clean": "rimraf dist",
@@ -89,6 +89,7 @@
     "supertest": "^7.1.3",
     "ts-jest": "^29.4.0",
     "ts-node": "^10.9.2",
+    "tsup": "^8.5.1",
     "typescript": "^5.8.3"
   },
   "peerDependencies": {

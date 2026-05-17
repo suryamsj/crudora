@@ -6,6 +6,20 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ---
 
+## [0.2.1] — 2026-05-17
+
+### Added
+
+- **`includeHidden` option** — `findById()`, `findOne()`, `findAll()`, and `findWithCursor()` now accept `{ includeHidden: true }` to bypass `static hidden` field stripping. Useful for auth routes that need to read a password hash without raw Drizzle queries.
+- **Authentication guide** — new `docs/authentication.md` covering middleware patterns, login/register routes, JWT helper example, and how to protect auto-generated CRUD routes.
+
+### Fixed
+
+- **Dual CJS/ESM build** — `dist/index.cjs` was never produced. Migrated build system from manual `tsc` + multiple tsconfigs to **tsup**, which correctly outputs `dist/index.js` (ESM), `dist/index.cjs` (CJS), and `dist/index.d.ts` / `dist/index.d.cts` (types) in a single pass. Removed `tsconfig.esm.json`, `tsconfig.cli.json`, and the `dist/cjs/` directory workaround.
+- **`exports` condition order** — moved `"types"` before `"import"` / `"require"` in `package.json` so TypeScript resolves declarations correctly.
+
+---
+
 ## [0.2.0] — 2026-05-17
 
 ### Added
