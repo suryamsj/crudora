@@ -1,3 +1,4 @@
+import http from 'http';
 import express, { Express } from 'express';
 import { randomUUID } from 'crypto';
 import { Crudora } from './crudora';
@@ -113,13 +114,34 @@ export interface CrudoraServerConfig {
    * - Omit / `undefined` (default): enabled with 100 requests per minute per IP.
    * - Pass a `RateLimitConfig` object to customise the window, limit, or key function.
    * - Pass `false` to disable rate limiting entirely (e.g. when using an external proxy-level limiter).
+   *
+   * **Important:** This limiter is in-memory and per-process. In multi-instance deployments
+   * (load balancer, Kubernetes replicas), each instance tracks its own counter independently —
+   * the effective limit per client is `max × instanceCount`. Use a Redis-backed limiter
+   * (e.g. `rate-limiter-flexible`) and pass `rateLimit: false` to disable this one.
    */
   rateLimit?: RateLimitConfig | false;
+  /**
+   * Socket-level request timeout in milliseconds.
+   * Requests that exceed this duration are terminated with a `503` response.
+   * - Omit / `0` (default): no timeout.
+   * - Recommended: `30_000` (30 s) for most APIs.
+   */
+  timeout?: number;
+  /**
+   * Built-in health check endpoint.
+   * - `true` (default): mounts `GET /health` returning `{ status: 'ok' }`.
+   * - `string`: custom path, e.g. `'/healthz'`.
+   * - `false`: disable entirely.
+   */
+  healthCheck?: boolean | string;
 }
 
 type ResolvedConfig = Required<Omit<CrudoraServerConfig, 'logger' | 'rateLimit'>> & {
   logger: CrudoraLogger | false;
   rateLimit: Required<RateLimitConfig> | false;
+  timeout: number;
+  healthCheck: boolean | string;
 };
 
 // ─── Server ───────────────────────────────────────────────────────────────────
@@ -128,6 +150,7 @@ export class CrudoraServer {
   private app: Express;
   private crudora: Crudora;
   private config: ResolvedConfig;
+  private httpServer: http.Server | null = null;
 
   constructor(config: CrudoraServerConfig) {
     const resolvedLogger: CrudoraLogger | false =
@@ -149,6 +172,8 @@ export class CrudoraServer {
       bodyParser:      true,
       bodyParserLimit: '100kb',
       basePath:        '/api',
+      timeout:         0,
+      healthCheck:     true,
       ...config,
       logger:    resolvedLogger,
       rateLimit: resolvedRateLimit,
@@ -179,6 +204,22 @@ export class CrudoraServer {
       req.correlationId = randomUUID();
       next();
     });
+
+    // Request timeout — sends 503 if the handler hasn't responded within the window.
+    // Applied early so it covers body parsing, route handling, and DB queries.
+    if (this.config.timeout > 0) {
+      const timeoutMs = this.config.timeout;
+      this.app.use((_req, res, next) => {
+        const timer = setTimeout(() => {
+          if (!res.headersSent) {
+            res.status(503).json({ success: false, error: { code: 'TIMEOUT', message: 'Request timed out' } });
+          }
+        }, timeoutMs);
+        res.on('finish', () => clearTimeout(timer));
+        res.on('close',  () => clearTimeout(timer));
+        next();
+      });
+    }
 
     // Rate limiting — applied before body parsing so abusive requests are rejected
     // before we spend CPU deserializing their body
@@ -228,6 +269,14 @@ export class CrudoraServer {
   }
 
   generateRoutes(): this {
+    if (this.config.healthCheck !== false) {
+      const healthPath = typeof this.config.healthCheck === 'string'
+        ? this.config.healthCheck
+        : '/health';
+      this.app.get(healthPath, (_req, res) => {
+        res.json({ success: true, data: { status: 'ok', timestamp: new Date().toISOString() } });
+      });
+    }
     this.crudora.generateRoutes(this.app, this.config.basePath);
     return this;
   }
@@ -237,12 +286,30 @@ export class CrudoraServer {
     return this;
   }
 
-  listen(callback?: () => void): void {
-    this.app.listen(this.config.port, () => {
+  /**
+   * Starts the HTTP server and returns the underlying `http.Server` instance.
+   * Use the returned server for graceful shutdown:
+   *
+   * @example
+   * const httpServer = server.listen();
+   * process.on('SIGTERM', () => httpServer.close(() => process.exit(0)));
+   */
+  listen(callback?: () => void): http.Server {
+    this.httpServer = http.createServer(this.app);
+    this.httpServer.listen(this.config.port, () => {
       console.log(`🚀 Crudora server running on port ${this.config.port}`);
       console.log(`📚 API available at http://localhost:${this.config.port}${this.config.basePath}`);
       if (callback) callback();
     });
+    return this.httpServer;
+  }
+
+  /**
+   * Returns the `http.Server` instance after `listen()` has been called, or `null` before.
+   * Useful when you need the server reference without calling listen again.
+   */
+  getHttpServer(): http.Server | null {
+    return this.httpServer;
   }
 
   getApp(): Express {

@@ -6,6 +6,26 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ---
 
+## [0.3.0] — 2026-05-17
+
+### Added
+
+- **Request timeout** — new `timeout` option on `CrudoraServerConfig`. Requests exceeding the limit are terminated with a `503` response. Default: `0` (disabled). Recommended: `30_000` (30 s).
+- **Built-in health check** — new `healthCheck` option. Mounts `GET /health` returning `{ success: true, data: { status: 'ok', timestamp } }` by default. Accepts a custom path string (e.g. `'/healthz'`) or `false` to disable entirely.
+- **`getHttpServer()`** on `CrudoraServer` — returns the underlying `http.Server` instance after `listen()` is called, or `null` before. Useful when you need the server reference without starting a new listener.
+- **`listen()` returns `http.Server`** — enables graceful shutdown without keeping a separate reference:
+  ```ts
+  const httpServer = server.listen();
+  process.on('SIGTERM', () => httpServer.close(() => process.exit(0)));
+  ```
+- **`CONTRIBUTING.md`** — contribution guide covering project structure, testing conventions, commit format, and a step-by-step guide for adding new field types.
+
+### Improved
+
+- **Test coverage** — overall statement coverage raised from ~62% to ~95%. `drizzleTableBuilder.ts`, `schemaGenerator.ts`, `validation.ts`, and `decorators/model.ts` now reach 100% line and branch coverage.
+
+---
+
 ## [0.2.1] — 2026-05-17
 
 ### Added

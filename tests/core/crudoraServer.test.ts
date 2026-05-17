@@ -208,4 +208,204 @@ describe('CrudoraServer', () => {
       expect(server.getCrudora()).toBeDefined();
     });
   });
+
+  describe('health check', () => {
+    it('GET /health returns ok when healthCheck is true (default)', async () => {
+      server.generateRoutes();
+      const response = await request(server.getApp()).get('/health');
+      expect(response.status).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.status).toBe('ok');
+      expect(response.body.data.timestamp).toBeDefined();
+    });
+
+    it('mounts health check on custom path when healthCheck is a string', async () => {
+      const s = new CrudoraServer({
+        db: dbMock,
+        dialect: 'postgresql',
+        healthCheck: '/healthz',
+        rateLimit: false,
+      });
+      s.generateRoutes();
+
+      const ok = await request(s.getApp()).get('/healthz');
+      const miss = await request(s.getApp()).get('/health');
+
+      expect(ok.status).toBe(200);
+      expect(ok.body.data.status).toBe('ok');
+      expect(miss.status).toBe(404);
+    });
+
+    it('does not mount health check when healthCheck is false', async () => {
+      const s = new CrudoraServer({
+        db: dbMock,
+        dialect: 'postgresql',
+        healthCheck: false,
+        rateLimit: false,
+      });
+      s.generateRoutes();
+      const response = await request(s.getApp()).get('/health');
+      expect(response.status).toBe(404);
+    });
+  });
+
+  describe('timeout middleware', () => {
+    it('returns 503 when handler does not respond within timeout', async () => {
+      const s = new CrudoraServer({
+        db: dbMock,
+        dialect: 'postgresql',
+        timeout: 80,
+        rateLimit: false,
+      });
+      s.get('/slow', () => { /* never responds */ });
+      s.generateRoutes();
+
+      const response = await request(s.getApp()).get('/api/slow');
+      expect(response.status).toBe(503);
+      expect(response.body.error.code).toBe('TIMEOUT');
+    }, 5000);
+
+    it('does not interfere when handler responds before timeout', async () => {
+      const s = new CrudoraServer({
+        db: dbMock,
+        dialect: 'postgresql',
+        timeout: 2000,
+        rateLimit: false,
+      });
+      s.get('/fast', (_req, res) => res.json({ ok: true }));
+      s.generateRoutes();
+
+      const response = await request(s.getApp()).get('/api/fast');
+      expect(response.status).toBe(200);
+    });
+  });
+
+  describe('CORS modes', () => {
+    it('reflects specific origin when cors is a string', async () => {
+      const s = new CrudoraServer({
+        db: dbMock,
+        dialect: 'postgresql',
+        cors: 'https://app.example.com',
+        rateLimit: false,
+      });
+      s.get('/ping', (_req, res) => res.json({ ok: true }));
+      s.generateRoutes();
+
+      const response = await request(s.getApp())
+        .get('/api/ping')
+        .set('Origin', 'https://app.example.com');
+
+      expect(response.headers['access-control-allow-origin']).toBe('https://app.example.com');
+      expect(response.headers['vary']).toContain('Origin');
+    });
+
+    it('reflects matching origin from an array', async () => {
+      const s = new CrudoraServer({
+        db: dbMock,
+        dialect: 'postgresql',
+        cors: ['https://app.example.com', 'https://other.example.com'],
+        rateLimit: false,
+      });
+      s.get('/ping', (_req, res) => res.json({ ok: true }));
+      s.generateRoutes();
+
+      const response = await request(s.getApp())
+        .get('/api/ping')
+        .set('Origin', 'https://app.example.com');
+
+      expect(response.headers['access-control-allow-origin']).toBe('https://app.example.com');
+      expect(response.headers['vary']).toContain('Origin');
+    });
+
+    it('does not reflect a non-matching origin from an array', async () => {
+      const s = new CrudoraServer({
+        db: dbMock,
+        dialect: 'postgresql',
+        cors: ['https://app.example.com'],
+        rateLimit: false,
+      });
+      s.get('/ping', (_req, res) => res.json({ ok: true }));
+      s.generateRoutes();
+
+      const response = await request(s.getApp())
+        .get('/api/ping')
+        .set('Origin', 'https://evil.com');
+
+      expect(response.headers['access-control-allow-origin']).toBeUndefined();
+    });
+  });
+
+  describe('logger options', () => {
+    it('accepts logger: false to disable logging', () => {
+      const s = new CrudoraServer({ db: dbMock, dialect: 'postgresql', logger: false });
+      expect(s).toBeInstanceOf(CrudoraServer);
+    });
+
+    it('accepts a custom logger object', () => {
+      const logger = { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() };
+      const s = new CrudoraServer({ db: dbMock, dialect: 'postgresql', logger });
+      expect(s).toBeInstanceOf(CrudoraServer);
+    });
+
+    it('default logger (no logger option) logs errors to console on route failure', async () => {
+      const s = new CrudoraServer({ db: dbMock, dialect: 'postgresql', rateLimit: false });
+      s.registerModel(TestUser).generateRoutes();
+      dbMock.select.mockImplementation(() => { throw new Error('DB error'); });
+      const response = await request(s.getApp()).get('/api/users');
+      expect(response.status).toBe(500);
+      expect(console.error).toHaveBeenCalled();
+    });
+  });
+
+  describe('registerTable', () => {
+    it('registers a model with a pre-built table and returns this', () => {
+      const fakeTable = { _: { name: 'users' } };
+      expect(server.registerTable(TestUser, fakeTable)).toBe(server);
+    });
+  });
+
+  describe('getTable', () => {
+    it('returns the Drizzle table for a registered model', () => {
+      server.registerModel(TestUser);
+      const table = server.getTable(TestUser);
+      expect(table).toBeDefined();
+    });
+
+    it('throws for an unregistered model', () => {
+      expect(() => server.getTable(TestUser)).toThrow();
+    });
+  });
+
+  describe('custom route HTTP methods', () => {
+    it('serves custom PUT, PATCH, and DELETE routes', async () => {
+      server.put('/item', (_req, res) => res.json({ method: 'PUT' }));
+      server.patch('/item', (_req, res) => res.json({ method: 'PATCH' }));
+      server.delete('/item', (_req, res) => res.status(204).send());
+      server.generateRoutes();
+
+      const putRes   = await request(server.getApp()).put('/api/item');
+      const patchRes = await request(server.getApp()).patch('/api/item');
+      const delRes   = await request(server.getApp()).delete('/api/item');
+
+      expect(putRes.body.method).toBe('PUT');
+      expect(patchRes.body.method).toBe('PATCH');
+      expect(delRes.status).toBe(204);
+    });
+  });
+
+  describe('listen and getHttpServer', () => {
+    it('getHttpServer() returns null before listen()', () => {
+      const s = new CrudoraServer({ db: dbMock, dialect: 'postgresql', rateLimit: false });
+      expect(s.getHttpServer()).toBeNull();
+    });
+
+    it('listen() returns an http.Server and updates getHttpServer()', (done) => {
+      const s = new CrudoraServer({ db: dbMock, dialect: 'postgresql', port: 0, rateLimit: false });
+      const httpServer = s.listen(() => {
+        expect(httpServer).toBeDefined();
+        expect(s.getHttpServer()).toBe(httpServer);
+        httpServer.close(done);
+      });
+    });
+  });
 });

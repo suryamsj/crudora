@@ -44,6 +44,23 @@ class NewTypesModel extends Model {
   tags!: string[];
 }
 
+class AllTypesModel extends Model {
+  static tableName = 'all_types';
+  static timestamps = false;
+
+  @Field({ type: 'uuid', primary: true })               id!: string;
+  @Field({ type: 'text' })                              bio!: string;
+  @Field({ type: 'integer' })                           age!: number;
+  @Field({ type: 'number' })                            score!: number;
+  @Field({ type: 'boolean' })                           active!: boolean;
+  @Field({ type: 'date' })                              birthday!: Date;
+  @Field({ type: 'decimal', precision: 5, scale: 2 })   price!: string;
+  @Field({ type: 'json' })                              meta!: object;
+  @Field({ type: 'uuid' })                              ownerId!: string;
+  @Field({ type: 'serial' })                            seq!: number;
+  @Field({ type: 'enum' })                              raw!: string;
+}
+
 class EmptyModel extends Model {
   static fillable: string[] = [];
   
@@ -157,6 +174,55 @@ describe('ValidationGenerator', () => {
 
       expect(() => schema.parse({ tags: ['typescript', 'drizzle'] })).not.toThrow();
       expect(() => schema.parse({ tags: 'not-an-array' })).toThrow();
+    });
+  });
+
+  describe('all field types coverage', () => {
+    const schema = ValidationGenerator.generateZodSchema(AllTypesModel);
+    const strict  = ValidationGenerator.generateStrictZodSchema(AllTypesModel);
+
+    it('accepts valid values for every field type', () => {
+      expect(() => schema.parse({
+        bio:      'some text',
+        age:      25,
+        score:    9.5,
+        active:   true,
+        birthday: new Date().toISOString(),
+        price:    '9.99',
+        meta:     { key: 'value' },
+        ownerId:  '550e8400-e29b-41d4-a716-446655440000',
+        seq:      1,
+        raw:      'anything',
+      })).not.toThrow();
+    });
+
+    it('rejects float for integer field', () => {
+      expect(() => schema.parse({ age: 1.5 })).toThrow();
+    });
+
+    it('rejects invalid decimal string', () => {
+      expect(() => schema.parse({ price: 'not-decimal' })).toThrow();
+    });
+
+    it('accepts json object or array', () => {
+      expect(() => schema.parse({ meta: { a: 1 } })).not.toThrow();
+      expect(() => schema.parse({ meta: [1, 2, 3] })).not.toThrow();
+    });
+
+    it('rejects non-boolean for boolean field', () => {
+      expect(() => schema.parse({ active: 'yes' })).toThrow();
+    });
+
+    it('rejects non-integer for serial field', () => {
+      expect(() => strict.parse({ seq: 1.5 })).toThrow();
+    });
+
+    it('rejects non-positive for serial field', () => {
+      expect(() => strict.parse({ seq: 0 })).toThrow();
+    });
+
+    it('validates enum-without-enumValues as any string', () => {
+      expect(() => schema.parse({ raw: 'anything' })).not.toThrow();
     });
   });
 });
