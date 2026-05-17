@@ -5,82 +5,76 @@
 ### Constructor
 
 ```typescript
-new Crudora(prisma: PrismaClient)
+new Crudora(db: any, dialect: 'postgresql' | 'mysql', logger?: CrudoraLogger)
 ```
 
 Creates a new Crudora instance.
 
 **Parameters:**
-- `prisma` - PrismaClient instance
+- `db` — Drizzle db instance (e.g. `drizzle(pool)`)
+- `dialect` — `'postgresql'` or `'mysql'`
+- `logger` — optional; custom logger implementing `CrudoraLogger`. Omit to use no logging.
+
+**Throws** if `db` is not provided.
 
 ### Methods
 
 #### registerModel(...modelClasses)
 
-Registers one or more model classes with Crudora.
+Registers one or more model classes. For each class, builds a Drizzle table object from `@Field()` metadata (respecting `static schema` for multi-schema support) and creates a `Repository`.
 
 ```typescript
 crudora.registerModel(User, Post, Comment)
 ```
 
-**Parameters:**
-- `modelClasses` - Model classes that extend the base Model class or use decorators
+**Returns:** `this`
 
-**Returns:** `this` (for method chaining)
+#### getRepository\<T\>(modelClass)
 
-#### getRepository<T>(modelClass)
-
-Gets the repository instance for a specific model.
+Returns the `Repository` for a registered model.
 
 ```typescript
 const userRepo = crudora.getRepository(User)
 ```
 
-**Parameters:**
-- `modelClass` - The model class
+**Throws** if the model was not registered.
 
-**Returns:** `Repository<T>` instance
+**Returns:** `Repository<T>`
 
-#### generatePrismaSchema(databaseProvider?)
+#### generateDrizzleSchema()
 
-Generates Prisma schema from registered models.
+Generates a TypeScript Drizzle schema file as a string from all registered models. The output can be saved to `src/db/schema.ts` and used with `drizzle-kit`.
 
 ```typescript
-const schema = crudora.generatePrismaSchema('postgresql')
+const schema = crudora.generateDrizzleSchema()
+console.log(schema)
 ```
 
-**Parameters:**
-- `databaseProvider` (optional) - Database provider ('postgresql', 'mysql', 'sqlite'). Defaults to 'postgresql'
+**Returns:** `string` — ready-to-use TypeScript Drizzle schema
 
-**Returns:** Generated Prisma schema as string
+#### getValidationSchema\<T\>(modelClass)
 
-#### getValidationSchema<T>(modelClass)
-
-Gets partial Zod validation schema for a model (used for updates).
+Returns a **partial** Zod schema derived from `static fillable`. Used internally by **PATCH** routes (partial update — all fields optional).
 
 ```typescript
 const schema = crudora.getValidationSchema(User)
 ```
 
-**Parameters:**
-- `modelClass` - The model class
-
 **Returns:** `z.ZodType<Partial<T>>`
 
-#### getStrictValidationSchema<T>(modelClass)
+#### getStrictValidationSchema\<T\>(modelClass)
 
-Gets strict Zod validation schema for a model (used for creation).
+Returns a **strict** Zod schema requiring all `required` fillable fields. Used internally by **POST** and **PUT** routes.
 
 ```typescript
 const schema = crudora.getStrictValidationSchema(User)
 ```
 
-**Parameters:**
-- `modelClass` - The model class
-
 **Returns:** `z.ZodType<T>`
 
 #### Custom Route Methods
+
+Add custom routes that are registered alongside auto-generated CRUD routes.
 
 ```typescript
 crudora.get(path, handler)
@@ -90,66 +84,97 @@ crudora.delete(path, handler)
 crudora.patch(path, handler)
 ```
 
-**Parameters:**
-- `path` - Route path
-- `handler` - Express route handler function
-
-**Returns:** `this` (for method chaining)
+**Returns:** `this`
 
 #### generateRoutes(app, basePath?)
 
-Generates CRUD routes for all registered models.
+Mounts all CRUD routes and custom routes on an Express app.
 
 ```typescript
 crudora.generateRoutes(app, '/api/v1')
 ```
 
 **Parameters:**
-- `app` - Express application instance
-- `basePath` (optional) - Base path for routes (default: '/api')
+- `app` — Express application instance
+- `basePath` — optional, defaults to `'/api'`
+
+---
 
 ## CrudoraServer Class
 
 ### Constructor
 
 ```typescript
-new CrudoraServer(options: {
-  port?: number;
-  prisma: PrismaClient;
-  cors?: boolean;
-  middleware?: any[];
-  basePath?: string;
-})
+new CrudoraServer(config: CrudoraServerConfig)
 ```
 
-**Options:**
-- `port` - Server port (default: 3000)
-- `prisma` - PrismaClient instance (required)
-- `cors` - Enable CORS (default: true)
-- `middleware` - Additional Express middleware array
-- `basePath` - Base path for API routes (default: '/api')
+```typescript
+interface CrudoraServerConfig {
+  db: any;                              // Drizzle db instance (required)
+  dialect: 'postgresql' | 'mysql';      // (required)
+  port?: number;                        // default: 3000
+  cors?: boolean | string | string[];   // default: true (allow all origins)
+  bodyParser?: boolean;                 // default: true
+  bodyParserLimit?: string | number;    // default: '100kb'
+  basePath?: string;                    // default: '/api'
+  logger?: CrudoraLogger | false;       // default: built-in structured JSON logger
+  rateLimit?: RateLimitConfig | false;  // default: 100 req/min per IP
+}
+
+interface RateLimitConfig {
+  windowMs?: number;                    // sliding-window duration ms. default: 60_000
+  max?: number;                         // max requests per window per key. default: 100
+  message?: string;                     // 429 message. default: 'Too many requests'
+  keyGenerator?: (req: any) => string;  // default: req.ip
+}
+```
+
+**`cors` options:**
+- `true` — allow all origins
+- `false` — disable CORS middleware
+- `'https://example.com'` — allow a specific origin
+- `['https://a.com', 'https://b.com']` — allow multiple origins
+
+**`bodyParserLimit` options:**
+- `'100kb'` (default) — 100 kilobytes
+- `'5mb'` — 5 megabytes (for bulk payloads)
+- `102400` — raw bytes
+
+**`logger` options:**
+- omitted / `undefined` — uses the built-in structured JSON logger (logs to `console`)
+- `CrudoraLogger` — use a custom logger (e.g. pino, winston)
+- `false` — disable all logging
+
+**`rateLimit` options:**
+- omitted / `undefined` — enabled with 100 requests per minute per IP
+- `RateLimitConfig` — custom window / limit / key function
+- `false` — disable rate limiting (e.g. when an upstream proxy handles it)
+
+Rate-limited responses include standard headers:
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 42
+X-RateLimit-Reset: 1720000000   ← Unix timestamp (seconds)
+Retry-After: 60                 ← only on 429
+```
 
 ### Methods
 
 #### registerModel(...modelClasses)
 
-Registers model classes with the underlying Crudora instance.
-
 ```typescript
 server.registerModel(User, Post)
 ```
 
-**Returns:** `this` (for method chaining)
+**Returns:** `this`
 
 #### generateRoutes()
-
-Generates CRUD routes for all registered models.
 
 ```typescript
 server.generateRoutes()
 ```
 
-**Returns:** `this` (for method chaining)
+**Returns:** `this`
 
 #### use(middleware)
 
@@ -157,18 +182,37 @@ Adds middleware to the Express application.
 
 ```typescript
 server.use(cors())
-server.use(express.json())
 ```
+
+**Returns:** `this`
+
+#### listen(callback?)
+
+Starts the HTTP server.
+
+```typescript
+server.listen(() => console.log('Server started'))
+```
+
+#### getApp()
+
+Returns the underlying Express application.
+
+```typescript
+const app = server.getApp()
+```
+
+**Returns:** `Express`
 
 #### getCrudora()
 
-Gets the underlying Crudora instance.
+Returns the underlying `Crudora` instance.
 
 ```typescript
 const crudora = server.getCrudora()
 ```
 
-**Returns:** `Crudora` instance
+**Returns:** `Crudora`
 
 #### Custom Route Methods
 
@@ -180,220 +224,347 @@ server.delete(path, handler)
 server.patch(path, handler)
 ```
 
-#### listen(callback?)
+**Returns:** `this`
 
-Starts the server.
+---
+
+## Repository\<T\> Class
+
+Constructed automatically via `registerModel()`. Access via `crudora.getRepository(ModelClass)`.
+
+### Constructor
 
 ```typescript
-server.listen(() => {
-  console.log('Server started on port 3000')
-})
+new Repository(modelClass, db, table)
 ```
 
-## Repository Class
+| Param | Description |
+|---|---|
+| `modelClass` | Model class (extends `Model`) |
+| `db` | Drizzle db instance |
+| `table` | Drizzle table object (built by `DrizzleTableBuilder`) |
 
 ### Methods
 
 #### create(data)
 
-Creates a new record.
-
 ```typescript
-const user = await userRepo.create({ name: 'John', email: 'john@example.com' })
+const user = await userRepo.create({ email: 'john@example.com', password: '...' })
 ```
 
-**Parameters:**
-- `data` - Object containing the data to create
+Generates a UUID for the primary key if not provided, runs `beforeCreate` / `afterCreate` hooks, and fetches the created record back (hidden fields excluded).
 
-**Returns:** Promise<T> - Created record
+**Returns:** `Promise<T>`
 
-#### findById(id)
-
-Finds a record by ID.
+#### createMany(records)
 
 ```typescript
-const user = await userRepo.findById('123')
+const users = await userRepo.createMany([
+  { email: 'alice@example.com', password: '...' },
+  { email: 'bob@example.com',   password: '...' },
+])
 ```
 
-**Parameters:**
-- `id` - Record ID
+Inserts multiple records in a single query. Generates UUIDs for missing primary keys. Runs `afterCreateMany` hook if defined. `beforeCreate` and `afterCreate` are **not** called per-item.
 
-**Returns:** Promise<T | null> - Found record or null
+**Returns:** `Promise<T[]>`
+
+#### findById(id, options?)
+
+```typescript
+const user = await userRepo.findById('uuid')
+
+// Include soft-deleted records
+const user = await userRepo.findById('uuid', { withDeleted: true })
+```
+
+**Returns:** `Promise<T | null>`
+
+#### findOne(where)
+
+```typescript
+const user = await userRepo.findOne({ email: 'john@example.com' })
+```
+
+Returns the first record matching the equality filter.
+
+**Returns:** `Promise<T | null>`
 
 #### findAll(options?)
-
-Finds all records with optional filtering and pagination.
 
 ```typescript
 const users = await userRepo.findAll({
   skip: 0,
   take: 10,
-  where: { active: true },
-  orderBy: { createdAt: 'desc' }
+  where: { isActive: 'true' },
 })
 ```
 
-**Parameters:**
-- `options` (optional) - Query options object
-  - `skip` - Number of records to skip
-  - `take` - Number of records to take
-  - `where` - Filter conditions
-  - `orderBy` - Sort order
+**Options:**
+- `skip` — offset
+- `take` — limit
+- `where` — equality filters (plain object, each key = column name)
+- `withDeleted` — include soft-deleted records (boolean)
 
-**Returns:** Promise<T[]> - Array of records
+**Returns:** `Promise<T[]>`
+
+#### findWithCursor(options)
+
+Cursor-based pagination for high-performance traversal of large datasets.
+
+```typescript
+const result = await userRepo.findWithCursor({
+  take: 20,
+  cursor: req.query.cursor as string | undefined,
+  where: { isActive: 'true' },
+})
+// result.data    — array of records
+// result.nextCursor — base64 cursor for the next page (null if no more)
+```
+
+**Returns:** `Promise<CursorResult<T>>`
 
 #### update(id, data)
 
-Updates a record by ID.
-
 ```typescript
-const user = await userRepo.update('123', { name: 'Jane' })
+const updated = await userRepo.update('uuid', { name: 'Jane' })
 ```
 
-**Parameters:**
-- `id` - Record ID
-- `data` - Object containing the data to update
+Runs `beforeUpdate` / `afterUpdate` hooks. Fetches the updated record back.
 
-**Returns:** Promise<T> - Updated record
+**Returns:** `Promise<T>`
 
 #### delete(id)
 
-Deletes a record by ID.
-
 ```typescript
-await userRepo.delete('123')
+const deleted = await userRepo.delete('uuid')
 ```
 
-**Parameters:**
-- `id` - Record ID
+For soft-delete models (`static softDelete = true`): sets `deletedAt` to the current timestamp.  
+For regular models: hard-deletes the record.  
+Runs `beforeDelete` / `afterDelete` hooks.
 
-**Returns:** Promise<T> - Deleted record
+**Returns:** `Promise<T>` — the deleted record
+
+#### hardDelete(id)
+
+```typescript
+await userRepo.hardDelete('uuid')
+```
+
+Always permanently deletes the record, even if `softDelete = true`.
+
+**Returns:** `Promise<T>`
+
+#### restore(id)
+
+```typescript
+await userRepo.restore('uuid')
+```
+
+Restores a soft-deleted record by clearing `deletedAt`.
+
+**Returns:** `Promise<T>`
+
+#### exists(where)
+
+```typescript
+const emailTaken = await userRepo.exists({ email: 'john@example.com' })
+```
+
+**Returns:** `Promise<boolean>`
 
 #### count(where?)
 
-Counts records with optional filtering.
-
 ```typescript
-const count = await userRepo.count({ active: true })
+const total = await userRepo.count({ isActive: 'true' })
 ```
 
-**Parameters:**
-- `where` (optional) - Filter conditions
+**Returns:** `Promise<number>`
 
-**Returns:** Promise<number> - Count of records
+#### transaction(fn)
+
+```typescript
+const result = await userRepo.transaction(async (tx) => {
+  const user = await tx.insert(usersTable).values({ ... }).returning()
+  return user
+})
+```
+
+Runs a function inside a database transaction. `tx` is a Drizzle transaction object.
+
+**Returns:** `Promise<R>`
+
+---
+
+## DrizzleTableBuilder Class
+
+Builds a Drizzle table object at runtime from a Model class's `@Field()` decorator metadata.
+
+```typescript
+import { DrizzleTableBuilder } from 'crudora'
+
+const table = DrizzleTableBuilder.build(User, 'postgresql')
+// → pgSchema('auth').table('users', { id: uuid('id').primaryKey(), ... })
+```
+
+Respects `static schema` for multi-schema routing:
+- `static schema = 'auth'` → `pgSchema('auth').table(...)`
+- No schema → `pgTable(...)`
+
+---
 
 ## Generated REST Endpoints
 
-For each registered model, the following endpoints are automatically generated:
+All responses use a consistent JSON envelope:
+
+```json
+{ "success": true,  "data": ..., "meta": ... }
+{ "success": false, "error": "...", "details": [...] }
+```
 
 ### GET /api/{tableName}
 
-List all records with pagination and filtering.
+List all records with pagination.
 
-**Query Parameters:**
-- `skip` - Number of records to skip (default: 0)
-- `take` - Number of records to take (default: 10)
-- `orderBy` - Sort field and direction (e.g., 'createdAt:desc')
-- `where` - Filter conditions (JSON string)
+**Query params:**
+
+| Param | Type | Description |
+|---|---|---|
+| `page` | number | Page number (default `1`) |
+| `limit` | number | Records per page (default `10`) |
+| `cursor` | string | Base64 cursor for cursor-based pagination |
+| `sortBy` | string | Field to sort by |
+| `sortOrder` | `asc` \| `desc` | Sort direction (default `asc`) |
+| `withDeleted` | boolean | Include soft-deleted records |
+| `{field}` | string | Equality filter (e.g. `?email=john@example.com`) |
+| `{field}_gt` | string | Greater-than filter |
+| `{field}_lt` | string | Less-than filter |
+| `{field}_gte` | string | Greater-than-or-equal filter |
+| `{field}_lte` | string | Less-than-or-equal filter |
+| `{field}_like` | string | LIKE filter (SQL pattern) |
+| `{field}_ne` | string | Not-equal filter |
 
 **Response:**
 ```json
-[
-  {
-    "id": "uuid",
-    "name": "John Doe",
-    "email": "john@example.com",
-    "createdAt": "2023-01-01T00:00:00.000Z",
-    "updatedAt": "2023-01-01T00:00:00.000Z"
-  }
-]
+{
+  "success": true,
+  "data": [{ "id": "uuid", "email": "john@example.com" }],
+  "meta": { "page": 1, "limit": 10, "total": 42, "pages": 5 }
+}
 ```
 
 ### GET /api/{tableName}/:id
 
-Get a single record by ID.
-
 **Response:**
 ```json
-{
-  "id": "uuid",
-  "name": "John Doe",
-  "email": "john@example.com",
-  "createdAt": "2023-01-01T00:00:00.000Z",
-  "updatedAt": "2023-01-01T00:00:00.000Z"
-}
+{ "success": true, "data": { "id": "uuid", "email": "john@example.com" } }
 ```
+
+Returns `404` if not found.
 
 ### POST /api/{tableName}
 
-Create a new record.
+**Body:** JSON with fillable fields. Validated against **strict** Zod schema — all `required` fields must be present.
 
-**Request Body:**
+**Response** (`201`):
 ```json
-{
-  "name": "John Doe",
-  "email": "john@example.com"
-}
+{ "success": true, "data": { "id": "uuid", "email": "john@example.com" } }
 ```
 
-**Response:** Created record (201 status)
+Returns `422` on validation error.
 
 ### PUT /api/{tableName}/:id
 
-Update an existing record.
+Full replace — all `required` fields must be present. Validated against **strict** Zod schema.
 
-**Request Body:**
+**Response** (`200`):
 ```json
-{
-  "name": "Jane Doe"
-}
+{ "success": true, "data": { "id": "uuid", "email": "jane@example.com" } }
 ```
 
-**Response:** Updated record (200 status)
+Returns `422` on validation error, `404` if not found.
+
+### PATCH /api/{tableName}/:id
+
+Partial update — only provided fields are updated. Validated against **partial** Zod schema.
+
+**Response** (`200`):
+```json
+{ "success": true, "data": { "id": "uuid", "email": "jane@example.com" } }
+```
 
 ### DELETE /api/{tableName}/:id
 
-Delete a record.
+Soft-delete or hard-delete depending on `static softDelete`.
 
-**Response:** Deleted record (200 status)
+**Response** (`200`):
+```json
+{ "success": true, "data": { "id": "uuid", "deletedAt": "2026-01-01T00:00:00.000Z" } }
+```
+
+Returns `404` if not found.
+
+---
 
 ## Error Responses
 
-### 400 Bad Request
+### 422 Unprocessable Entity (validation error)
 ```json
 {
-  "error": "Validation failed",
-  "details": [
-    {
-      "field": "email",
-      "message": "Invalid email format"
-    }
-  ]
+  "success": false,
+  "error": "Validation error",
+  "details": [{ "field": "email", "message": "Required" }]
 }
 ```
 
 ### 404 Not Found
 ```json
-{
-  "error": "Record not found"
-}
+{ "success": false, "error": "Not found" }
 ```
 
 ### 500 Internal Server Error
 ```json
-{
-  "error": "Internal server error"
+{ "success": false, "error": "Internal server error" }
+```
+
+---
+
+## CrudoraLogger Interface
+
+```typescript
+interface CrudoraLogger {
+  error(message: string, context?: Record<string, any>): void;
+  warn(message: string,  context?: Record<string, any>): void;
+  info(message: string,  context?: Record<string, any>): void;
+  debug(message: string, context?: Record<string, any>): void;
 }
 ```
 
-## Installation
+The built-in default logger outputs structured JSON to `console`:
 
-```bash
-npm install crudora@0.1.0-alpha.1
-# Dependencies yang diperlukan:
-npm install @prisma/client prisma
+```json
+{ "level": "info", "time": "2026-01-01T00:00:00.000Z", "msg": "POST /api/users", "correlationId": "uuid" }
 ```
 
-**Current Version**: 0.1.0-alpha.1
-**Author**: Muhammad Surya J
-**Repository**: https://github.com/suryamsj/crudora
+Every request automatically gets a `correlationId` (UUID) attached to the log context.
+
+**Custom logger example (pino):**
+
+```typescript
+import pino from 'pino';
+const logger = pino();
+
+new CrudoraServer({ db, dialect: 'postgresql', logger });
+```
+
+**Disable logging:**
+
+```typescript
+new CrudoraServer({ db, dialect: 'postgresql', logger: false });
+```
+
+---
+
+**Author:** Muhammad Surya J  
+**Repository:** https://github.com/suryamsj/crudora

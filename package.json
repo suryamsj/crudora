@@ -1,10 +1,13 @@
 {
   "name": "crudora",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "crudora": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -21,7 +24,7 @@
     "scripts"
   ],
   "scripts": {
-    "build": "tsc && node scripts/copy-assets.js",
+    "build": "tsc && tsc -p tsconfig.cli.json && node scripts/copy-assets.js",
     "copy-assets": "node scripts/copy-assets.js",
     "build:watch": "tsc --watch",
     "clean": "rimraf dist",
@@ -39,7 +42,7 @@
     "crud",
     "api",
     "typescript",
-    "prisma",
+    "drizzle",
     "express",
     "framework",
     "backend",
@@ -48,7 +51,8 @@
     "validation",
     "zod",
     "decorators",
-    "auto-generation"
+    "auto-generation",
+    "multiple-schema"
   ],
   "repository": {
     "type": "git",
@@ -63,12 +67,11 @@
     "url": "https://suryamsj.my.id"
   },
   "license": "MIT",
-  "description": "TypeScript framework for automated CRUD API generation with Prisma and Express",
+  "description": "TypeScript framework for automated CRUD API generation with Drizzle ORM and Express",
   "dependencies": {
     "@types/express": "^5.0.3",
     "commander": "^14.0.0",
     "express": "^5.1.0",
-    "jest-mock-extended": "^4.0.0",
     "reflect-metadata": "^0.2.2",
     "zod": "^4.0.5"
   },
@@ -78,6 +81,7 @@
     "@types/supertest": "^6.0.3",
     "@typescript-eslint/eslint-plugin": "^8.38.0",
     "@typescript-eslint/parser": "^8.38.0",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9.31.0",
     "jest": "^30.0.4",
     "prettier": "^3.6.2",
@@ -88,7 +92,17 @@
     "typescript": "^5.8.3"
   },
   "peerDependencies": {
-    "@prisma/client": "^6.12.0",
-    "prisma": "^6.12.0"
+    "drizzle-orm": "^0.40.0"
+  },
+  "peerDependenciesMeta": {
+    "pg": {
+      "optional": true
+    },
+    "postgres": {
+      "optional": true
+    },
+    "mysql2": {
+      "optional": true
+    }
   }
 }

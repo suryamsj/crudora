@@ -1,6 +1,5 @@
-import { Model, ModelConstructor } from '../../src/core/model';
+import { Model } from '../../src/core/model';
 
-// Test Model class
 class TestUser extends Model {
   static tableName = 'users';
   static primaryKey = 'id';
@@ -20,7 +19,7 @@ class TestUser extends Model {
 
 class TestProduct extends Model {
   static fillable = ['title', 'price'];
-  
+
   id?: string;
   title?: string;
   price?: number;
@@ -47,79 +46,74 @@ describe('Model', () => {
     });
   });
 
-  describe('getSelectObject', () => {
-    it('should return undefined when no hidden fields', () => {
-      expect(TestProduct.getSelectObject()).toBeUndefined();
+  describe('softDelete property', () => {
+    class SoftModel extends Model {
+      static tableName = 'soft_items';
+      static softDelete = true;
+    }
+
+    it('should be false by default', () => {
+      expect(TestUser.softDelete).toBe(false);
     });
 
-    it('should return select object with fillable fields excluding hidden', () => {
-      const selectObject = TestUser.getSelectObject();
-      
-      expect(selectObject).toEqual({
-        id: true,
-        name: true,
-        email: true,
-        age: true,
-        createdAt: true,
-        updatedAt: true
-      });
+    it('should be overrideable to true', () => {
+      expect(SoftModel.softDelete).toBe(true);
+    });
+  });
+
+  describe('static schema property', () => {
+    class SchemaBoundModel extends Model {
+      static schema = 'auth';
+      static tableName = 'tokens';
+    }
+
+    it('should expose schema name', () => {
+      expect((SchemaBoundModel as any).schema).toBe('auth');
     });
 
-    it('should exclude hidden fields from select object', () => {
-      const selectObject = TestUser.getSelectObject();
-      
-      expect(selectObject.password).toBeUndefined();
-      expect(selectObject.secret).toBeUndefined();
+    it('should be undefined when not set', () => {
+      expect((TestUser as any).schema).toBeUndefined();
     });
   });
 
   describe('lifecycle hooks', () => {
     it('should have default beforeCreate hook that returns data unchanged', async () => {
       const data = { name: 'Test' };
-      const result = await TestUser.beforeCreate!(data);
-      expect(result).toEqual(data);
+      expect(await TestUser.beforeCreate!(data)).toEqual(data);
     });
 
     it('should have default afterCreate hook that returns result unchanged', async () => {
-      const data = { name: 'Test' };
       const result = { id: '1', name: 'Test' };
-      const hookResult = await TestUser.afterCreate!(data, result);
-      expect(hookResult).toEqual(result);
+      expect(await TestUser.afterCreate!({ name: 'Test' }, result)).toEqual(result);
     });
 
     it('should have default beforeUpdate hook that returns data unchanged', async () => {
       const data = { name: 'Updated' };
-      const result = await TestUser.beforeUpdate!('1', data);
-      expect(result).toEqual(data);
+      expect(await TestUser.beforeUpdate!('1', data)).toEqual(data);
     });
 
     it('should have default afterUpdate hook that returns result unchanged', async () => {
-      const data = { name: 'Updated' };
       const result = { id: '1', name: 'Updated' };
-      const hookResult = await TestUser.afterUpdate!('1', data, result);
-      expect(hookResult).toEqual(result);
+      expect(await TestUser.afterUpdate!('1', {}, result)).toEqual(result);
     });
 
-    it('should have default beforeDelete hook that does nothing', async () => {
+    it('should have default beforeDelete hook that resolves undefined', async () => {
       await expect(TestUser.beforeDelete!('1')).resolves.toBeUndefined();
     });
 
     it('should have default afterDelete hook that returns result unchanged', async () => {
       const result = { id: '1', name: 'Deleted' };
-      const hookResult = await TestUser.afterDelete!('1', result);
-      expect(hookResult).toEqual(result);
+      expect(await TestUser.afterDelete!('1', result)).toEqual(result);
     });
 
     it('should have default beforeFind hook that returns options unchanged', async () => {
       const options = { where: { id: '1' } };
-      const result = await TestUser.beforeFind!(options);
-      expect(result).toEqual(options);
+      expect(await TestUser.beforeFind!(options)).toEqual(options);
     });
 
-    it('should have default afterFind hook that returns result unchanged', async () => {
-      const result = { id: '1', name: 'Found' };
-      const hookResult = await TestUser.afterFind!(result);
-      expect(hookResult).toEqual(result);
+    it('should have default afterFind hook that returns results unchanged', async () => {
+      const results = [{ id: '1', name: 'Found' }];
+      expect(await TestUser.afterFind!(results)).toEqual(results);
     });
   });
 });

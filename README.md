@@ -1,318 +1,548 @@
 # Crudora
 
-Automatic CRUD API generator for TypeScript with Prisma - Build REST APIs in minutes, not hours.
+Automatic CRUD API generator for TypeScript with Drizzle ORM — build REST APIs in minutes, not hours.
 
 [![npm version](https://badge.fury.io/js/crudora.svg)](https://badge.fury.io/js/crudora)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
-## ✨ Features
+## Features
 
-- 🚀 **Zero Configuration**: Generate CRUD APIs instantly
-- 🎯 **Type-Safe**: Full TypeScript support with Prisma integration
-- 🔧 **Flexible**: Support for both decorator and inheritance patterns
-- 📊 **Auto Pagination**: Built-in pagination and filtering
-- 🛡️ **Validation**: Automatic request validation with Zod
-- 🔌 **Extensible**: Custom routes and middleware support
-- 📖 **Schema Generation**: Auto-generate Prisma schemas from models
-- 🗄️ **Repository Pattern**: Built-in repository for database operations
-- 🔄 **Lifecycle Hooks**: beforeCreate, afterCreate, beforeUpdate, afterUpdate, beforeDelete, afterDelete, beforeFind, afterFind
-- 🔒 **Field Security**: Hidden fields support with automatic filtering
-- 🎛️ **Dynamic Selection**: Smart field selection based on fillable and hidden properties
-- ⚡ **Auto Setup**: Intelligent postinstall script for quick project initialization
-- 🔄 **TypeScript First**: Native TypeScript support with ESM modules
-- 🖥️ **CLI Tool**: Command-line interface for project initialization and scaffolding
+- **Zero Configuration** — generate CRUD APIs instantly from model classes
+- **Drizzle ORM** — type-safe queries with Drizzle under the hood
+- **Multiple Schema Support** — `pgSchema` / `mysqlSchema` per model via `static schema`
+- **`@Field()` Decorators** — define columns with types, constraints, and Drizzle table auto-generation
+- **Rich Field Types** — `uuid`, `string`, `text`, `integer`, `number`, `boolean`, `date`, `decimal`, `json`, `enum`, `bigint`, `serial`, `array`
+- **Advanced Filtering** — equality, range (`_gt`, `_gte`, `_lt`, `_lte`), negation (`_ne`), LIKE (`_like`), and IN (`_in`) operators via query params
+- **Offset & Cursor Pagination** — built-in offset pagination and efficient cursor-based pagination
+- **Zod Validation** — automatic request validation with length limits and enum constraints
+- **Soft Delete** — built-in soft-delete support with `restore()` and `hardDelete()`
+- **Relations** — `@HasMany`, `@HasOne`, `@BelongsTo`, `@BelongsToMany` with batch loading
+- **Transactions** — `repository.transaction()` and `crudora.transaction()`
+- **Lifecycle Hooks** — `beforeCreate`, `afterCreate`, `afterCreateMany`, `beforeUpdate`, `afterUpdate`, `beforeDelete`, `afterDelete`, `beforeFind`, `afterFind`
+- **Structured Logging** — pluggable `CrudoraLogger` with correlation IDs per request; compatible with pino, winston
+- **Field Security** — `hidden` fields stripped at query time via `getTableColumns()`
+- **Standardized Responses** — all endpoints return `{ success, data, meta?, error? }` OpenAPI-style envelope
+- **Schema Generator** — auto-generate Drizzle TypeScript schema files from models
+- **TypeScript First** — full type safety, ESM and CJS dual build
 
 ## Installation
 
 ```bash
-npm install crudora prisma @prisma/client
-# or
-yarn add crudora prisma @prisma/client
+npm install crudora drizzle-orm
+# PostgreSQL
+npm install pg
+# or MySQL
+npm install mysql2
 ```
 
-**Note**: After installation, Crudora automatically sets up your project with:
+After installation, Crudora sets up your project with:
+- `drizzle.config.ts` template
+- `src/db/schema.ts` template
+- Environment configuration (`.env`)
+- Basic server setup (`src/server.ts`)
 
-- Prisma schema template
-- Environment configuration (.env)
-- Basic server setup (server.ts)
-- Useful npm scripts
+Add these scripts to your `package.json`:
 
-## CLI Usage
-
-Crudora comes with a built-in CLI tool for quick project initialization and database management:
-
-```bash
-# Initialize a new Crudora project in the current directory
-npx crudora init
-
-# Start Prisma Studio for database management
-npx crudora studio
-
-# Generate Prisma Client
-npx crudora generate
-
-# Push Prisma schema to database
-npx crudora push
-
-# Run Prisma migrations
-npx crudora migrate
+```json
+{
+  "scripts": {
+    "dev":         "ts-node src/server.ts",
+    "build":       "tsc",
+    "db:generate": "drizzle-kit generate",
+    "db:push":     "drizzle-kit push",
+    "db:migrate":  "drizzle-kit migrate",
+    "db:studio":   "drizzle-kit studio"
+  }
+}
 ```
-
-### CLI Commands
-
-- `init` - Initialize a new Crudora project with necessary files (schema.prisma, .env, server.ts, tsconfig.json)
-- `studio` - Start Prisma Studio for visual database management
-- `generate` - Generate Prisma Client based on your schema
-- `push` - Push Prisma schema to your database without migrations
-- `migrate` - Run Prisma migrations for schema changes
 
 ## Quick Start
 
-### Basic Usage
-
 ```typescript
-import { CrudoraServer, Model } from "crudora";
-import { PrismaClient } from "@prisma/client";
+import { CrudoraServer, Model, Field } from 'crudora';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
+import 'dotenv/config';
 
-const prisma = new PrismaClient();
+const db = drizzle(new Pool({ connectionString: process.env.DATABASE_URL }));
 
 class User extends Model {
-  static tableName = "users";
-  static primaryKey = "id";
-  static timestamps = true;
-  static fillable = ["name", "email", "password"];
-  static hidden = ["password"];
+  static schema    = 'auth';           // PostgreSQL schema (optional)
+  static tableName = 'users';
+  static hidden    = ['password'];
 
-  // Lifecycle hooks
-  static async beforeCreate(data: any): Promise<any> {
+  @Field({ type: 'uuid', primary: true })
+  id!: string;
+
+  @Field({ type: 'string', required: true, unique: true, length: 255 })
+  email!: string;
+
+  @Field({ type: 'string', required: true })
+  password!: string;
+
+  static async beforeCreate(data: any) {
     data.password = await hashPassword(data.password);
     return data;
   }
 
-  static async afterCreate(data: any, result: any): Promise<any> {
-    console.log(`User created: ${result.email}`);
+  static async afterCreate(_data: any, result: any) {
+    await sendWelcomeEmail(result.email);
     return result;
   }
 }
 
-class Post extends Model {
-  static tableName = "posts";
-  static fillable = ["title", "content", "authorId"];
-  static hidden = ["deletedAt"];
-}
-
-const server = new CrudoraServer({
-  port: 3000,
-  prisma: prisma,
-});
+const server = new CrudoraServer({ db, dialect: 'postgresql', port: 3000 });
 
 server
-  .registerModel(User, Post)
+  .registerModel(User)
   .generateRoutes()
-  .listen(() => {
-    console.log("Server running on port 3000");
-  });
+  .listen();
 ```
 
 ## Generated API Endpoints
 
 For each registered model, Crudora automatically generates:
 
-- `GET /api/{tableName}` - List all records with pagination and filtering
-- `GET /api/{tableName}/:id` - Get record by ID
-- `POST /api/{tableName}` - Create new record
-- `PUT /api/{tableName}/:id` - Update record
-- `DELETE /api/{tableName}/:id` - Delete record
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/{tableName}` | List all with offset or cursor pagination |
+| `GET` | `/api/{tableName}/:id` | Get by ID |
+| `POST` | `/api/{tableName}` | Create — returns `201` |
+| `PUT` | `/api/{tableName}/:id` | Full replace — all required fields must be provided |
+| `PATCH` | `/api/{tableName}/:id` | Partial update — any subset of fields |
+| `DELETE` | `/api/{tableName}/:id` | Delete — returns `204 No Content` |
 
-### Query Parameters
+### Response Envelope
 
-- `skip` - Number of records to skip (pagination)
-- `take` - Number of records to take (pagination)
-- `orderBy` - Sort order (e.g., `createdAt:desc`)
-- `where` - Filter conditions
+All endpoints return a consistent JSON envelope:
 
-## Advanced Usage
+```json
+// Success (list)
+{
+  "success": true,
+  "data": [{ "id": "uuid", "email": "john@example.com" }],
+  "meta": {
+    "pagination": { "page": 1, "limit": 10, "total": 42, "pages": 5 }
+  }
+}
 
-### Lifecycle Hooks
+// Success (single)
+{ "success": true, "data": { "id": "uuid", "email": "john@example.com" } }
 
-Crudora supports comprehensive lifecycle hooks for all CRUD operations:
+// Error
+{
+  "success": false,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Resource not found"
+  }
+}
+
+// Validation error
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Validation failed",
+    "details": [{ "field": "email", "message": "Invalid email" }]
+  }
+}
+```
+
+### Query Parameters (GET list)
+
+| Param | Example | Description |
+|---|---|---|
+| `page` | `?page=2` | Page number (offset pagination, default: `1`) |
+| `limit` | `?limit=20` | Records per page (default: `10`, max: `1000`) |
+| `orderBy` | `?orderBy=name,createdAt` | Sort fields (comma-separated) |
+| `order` | `?order=asc,desc` | Sort directions (comma-separated) |
+| `cursor` | `?cursor=base64...` | Cursor for cursor-based pagination |
+| `cursorField` | `?cursorField=createdAt` | Field to use as cursor (default: primary key) |
+| `select` | `?select=id,name,email` | Return only specified fields |
+| `with` | `?with=posts,profile` | Load relations (max 5) |
+| `withDeleted` | `?withDeleted=true` | Include soft-deleted records |
+| `{field}` | `?name=John` | Equality filter |
+| `{field}_gt` | `?age_gt=18` | Greater than |
+| `{field}_gte` | `?age_gte=18` | Greater than or equal |
+| `{field}_lt` | `?createdAt_lt=2025-01-01` | Less than |
+| `{field}_lte` | `?createdAt_lte=2025-01-01` | Less than or equal |
+| `{field}_ne` | `?status_ne=deleted` | Not equal |
+| `{field}_like` | `?name_like=john` | LIKE `%john%` (case-sensitive) |
+| `{field}_in` | `?status_in=active,pending` | IN list (comma-separated) |
+
+## Multiple Schema Support
 
 ```typescript
 class User extends Model {
-  static tableName = "users";
-  static fillable = ["name", "email", "password"];
-  static hidden = ["password"];
+  static schema    = 'auth';     // → pgSchema('auth').table('users', ...)
+  static tableName = 'users';
+}
 
-  // Create hooks
-  static async beforeCreate(data: any): Promise<any> {
+class AuditLog extends Model {
+  static schema    = 'audit';   // → pgSchema('audit').table('audit_logs', ...)
+  static tableName = 'audit_logs';
+}
+
+class Post extends Model {
+  // No schema → pgTable('posts', ...) (default public schema)
+  static tableName = 'posts';
+}
+```
+
+## `@Field()` Decorator
+
+Columns are defined with `@Field()`. Crudora reads this metadata to auto-build Drizzle table objects at registration time.
+
+```typescript
+import { Model, Field } from 'crudora';
+
+class Product extends Model {
+  static tableName = 'products';
+
+  @Field({ type: 'serial', primary: true })
+  id!: number;
+
+  @Field({ type: 'string', required: true, length: 200 })
+  name!: string;
+
+  @Field({ type: 'enum', enumValues: ['draft', 'published', 'archived'] })
+  status!: string;
+
+  @Field({ type: 'decimal', precision: 10, scale: 2, required: true })
+  price!: string;
+
+  @Field({ type: 'integer' })
+  stock!: number;
+
+  @Field({ type: 'boolean' })
+  isActive!: boolean;
+
+  @Field({ type: 'json' })
+  metadata!: object;
+
+  @Field({ type: 'array' })
+  tags!: string[];
+}
+```
+
+### Supported Field Types
+
+| `type` | PostgreSQL | MySQL | Notes |
+|---|---|---|---|
+| `uuid` | `uuid` | `varchar(36)` | |
+| `string` | `varchar(length)` | `varchar(length)` | Zod enforces `max(length)` |
+| `text` | `text` | `text` | |
+| `integer` | `integer` | `int` | |
+| `number` | `doublePrecision` | `double` | |
+| `boolean` | `boolean` | `boolean` | |
+| `date` | `timestamp` | `datetime` | |
+| `decimal` | `decimal(p, s)` | `decimal(p, s)` | |
+| `json` | `json` | `json` | |
+| `enum` | `text` + Zod enum | `mysqlEnum` | Requires `enumValues` |
+| `bigint` | `bigint` (mode: number) | `bigint` (mode: number) | |
+| `serial` | `serial` (auto-increment) | `int().autoincrement()` | DB-managed, skip in API |
+| `array` | `text[]` | — (use `json`) | PostgreSQL only |
+
+> **Note on `enum` in PostgreSQL:** The column is stored as `text`. Enum values are enforced by Zod at the API layer. MySQL uses a native `ENUM` column.
+
+### Field Options
+
+| Option | Type | Description |
+|---|---|---|
+| `type` | `FieldType` | Column type (required) |
+| `primary` | `boolean` | Primary key — excluded from API validation |
+| `required` | `boolean` | NOT NULL constraint + required in Zod |
+| `nullable` | `boolean` | Column allows NULL; Zod accepts `null` values |
+| `unique` | `boolean` | UNIQUE constraint |
+| `length` | `number` | Max length for `string` — enforced by Zod |
+| `precision` | `number` | Decimal precision (default: 10) |
+| `scale` | `number` | Decimal scale (default: 2) |
+| `default` | `any` | Column default value |
+| `enumValues` | `string[]` | Required for `enum` type |
+
+## Soft Delete
+
+```typescript
+class Post extends Model {
+  static tableName  = 'posts';
+  static softDelete = true;     // adds deletedAt column
+
+  @Field({ type: 'uuid', primary: true }) id!: string;
+  @Field({ type: 'string' }) title!: string;
+}
+
+// DELETE /api/posts/:id → sets deletedAt (soft delete)
+// GET /api/posts         → excludes soft-deleted records by default
+// GET /api/posts?withDeleted=true → includes soft-deleted records
+
+const repo = crudora.getRepository(Post);
+await repo.restore('uuid');        // restore a soft-deleted record
+await repo.hardDelete('uuid');     // permanently delete
+```
+
+## Relations
+
+```typescript
+import { HasMany, BelongsTo } from 'crudora';
+
+class User extends Model {
+  static tableName = 'users';
+
+  @Field({ type: 'uuid', primary: true }) id!: string;
+  @Field({ type: 'string' }) name!: string;
+
+  @HasMany(() => Post, 'authorId')
+  posts?: Post[];
+}
+
+class Post extends Model {
+  static tableName = 'posts';
+
+  @Field({ type: 'uuid', primary: true }) id!: string;
+  @Field({ type: 'string' }) title!: string;
+  @Field({ type: 'uuid' }) authorId!: string;
+
+  @BelongsTo(() => User, 'authorId')
+  author?: User;
+}
+
+// Load with relations
+// GET /api/users?with=posts
+// GET /api/posts?with=author
+
+// Or via repository
+const users = await userRepo.findAll({ with: ['posts'] });
+const post  = await postRepo.findById('uuid', { with: ['author'] });
+```
+
+## Lifecycle Hooks
+
+```typescript
+class User extends Model {
+  static async beforeCreate(data: any) {
     data.password = await hashPassword(data.password);
-    data.createdAt = new Date();
     return data;
   }
 
-  static async afterCreate(data: any, result: any): Promise<any> {
+  static async afterCreate(_data: any, result: any) {
     await sendWelcomeEmail(result.email);
-    await logUserCreation(result.id);
     return result;
   }
 
-  // Update hooks
-  static async beforeUpdate(id: string, data: any): Promise<any> {
-    data.updatedAt = new Date();
+  // Called once after createMany() — use for bulk side effects
+  static async afterCreateMany(records: any[]) {
+    await sendBulkWelcomeEmails(records.map(r => r.email));
+    return records;
+  }
+
+  static async beforeUpdate(_id: string, data: any) {
     return data;
   }
 
-  static async afterUpdate(id: string, data: any, result: any): Promise<any> {
-    await logUserUpdate(id, data);
+  static async afterUpdate(id: string, _data: any, result: any) {
+    await auditLog('update', id);
     return result;
   }
 
-  // Delete hooks
-  static async beforeDelete(id: string): Promise<void> {
+  static async beforeDelete(id: string) {
     await archiveUserData(id);
   }
 
-  static async afterDelete(id: string, result: any): Promise<any> {
-    await logUserDeletion(id);
+  static async afterDelete(id: string, result: any) {
+    await auditLog('delete', id);
     return result;
   }
 
-  // Find hooks
-  static async beforeFind(options: any): Promise<any> {
-    // Add default filters
-    options.where = { ...options.where, active: true };
+  static async beforeFind(options: any) {
     return options;
   }
 
-  static async afterFind(result: any): Promise<any> {
-    // Transform result
-    if (Array.isArray(result)) {
-      return result.map((user) => ({ ...user, displayName: user.name }));
-    }
-    return { ...result, displayName: result.name };
+  static async afterFind(results: any[]) {
+    return results.map(u => ({ ...u, displayName: u.name }));
   }
 }
 ```
 
-### Field Security and Dynamic Selection
+> **`afterCreate` vs `afterCreateMany`:** `afterCreate` is called for each individual `create()`. `afterCreateMany` is called once with all records after `createMany()`. This is intentional — calling `afterCreate` N times in a batch defeats the performance benefit of bulk insert.
 
-Crudora automatically handles field security and dynamic selection:
-
-```typescript
-class User extends Model {
-  static tableName = "users";
-  static fillable = ["name", "email", "bio"]; // Only these fields can be mass-assigned
-  static hidden = ["password", "secret"]; // These fields are automatically excluded from responses
-}
-
-// API responses automatically exclude hidden fields
-// Only fillable fields are included in select queries for better performance
-```
-
-### Using Repositories
+## Using Repositories
 
 ```typescript
 const crudora = server.getCrudora();
 const userRepo = crudora.getRepository(User);
 
-// Create user (triggers beforeCreate and afterCreate hooks)
-const user = await userRepo.create({
-  name: "John Doe",
-  email: "john@example.com",
-  password: "plaintext", // Will be hashed by beforeCreate hook
-});
-// Response excludes password due to hidden field
+// Create
+const user = await userRepo.create({ email: 'john@example.com', password: 'plain' });
 
-// Find users (triggers beforeFind and afterFind hooks)
-const users = await userRepo.findAll({
-  skip: 0,
-  take: 10,
-  where: { active: true },
-  orderBy: { createdAt: "desc" },
-});
+// Bulk insert
+const users = await userRepo.createMany([
+  { email: 'alice@example.com', password: '...' },
+  { email: 'bob@example.com',   password: '...' },
+]);
 
-// Update user (triggers beforeUpdate and afterUpdate hooks)
-const updatedUser = await userRepo.update("user-id", {
-  name: "John Updated",
-});
+// Find
+const user   = await userRepo.findById('uuid');
+const users  = await userRepo.findAll({ skip: 0, take: 10, where: { isActive: 'true' } });
+const first  = await userRepo.findOne({ email: 'john@example.com' });
+const exists = await userRepo.exists({ email: 'john@example.com' });
+const total  = await userRepo.count({ isActive: 'true' });
 
-// Count users
-const count = await userRepo.count({ active: true });
+// Cursor pagination
+const page1 = await userRepo.findWithCursor({ take: 10 });
+const page2 = await userRepo.findWithCursor({ take: 10, cursor: page1.nextCursor });
+
+// Update / Delete
+const updated = await userRepo.update('uuid', { name: 'Jane' });
+await userRepo.delete('uuid');
+
+// Transactions
+await userRepo.transaction(async (trx) => {
+  const user = await trx.create({ email: 'alice@example.com', password: '...' });
+  await postTrxRepo.create({ title: 'Hello', authorId: user.id });
+});
 ```
 
-### Custom Routes
+## Logging
+
+By default, Crudora writes structured JSON to the console for request errors:
+
+```json
+{"level":"error","time":"2025-01-01T00:00:00.000Z","msg":"POST request failed","path":"/api/users","correlationId":"uuid-...","error":"Duplicate key"}
+```
+
+Every request automatically gets a unique **correlation ID** (`req.correlationId`) that appears in all log entries for that request.
+
+### Custom Logger
+
+Pass any object with `error`, `warn`, `info`, `debug` methods:
+
+```typescript
+import pino from 'pino';
+
+const logger = pino();
+
+const server = new CrudoraServer({
+  db,
+  dialect: 'postgresql',
+  logger: {
+    error: (msg, ctx) => logger.error(ctx, msg),
+    warn:  (msg, ctx) => logger.warn(ctx, msg),
+    info:  (msg, ctx) => logger.info(ctx, msg),
+    debug: (msg, ctx) => logger.debug(ctx, msg),
+  },
+});
+
+// Or disable logging entirely
+const server = new CrudoraServer({ db, dialect: 'postgresql', logger: false });
+```
+
+## Schema Generation
+
+```typescript
+const schema = server.getCrudora().generateDrizzleSchema();
+console.log(schema);
+// → TypeScript file ready for drizzle-kit
+```
+
+Example output:
+
+```typescript
+// Auto-generated by Crudora — do not edit manually
+import { pgTable, pgSchema, uuid, varchar, timestamp } from 'drizzle-orm/pg-core';
+
+const authSchema = pgSchema('auth');
+
+export const usersTable = authSchema.table('users', {
+  id:        uuid('id').primaryKey(),
+  email:     varchar('email', { length: 255 }).notNull().unique(),
+  password:  varchar('password', { length: 255 }).notNull(),
+  createdAt: timestamp('createdAt', { mode: 'date' }).defaultNow().notNull(),
+  updatedAt: timestamp('updatedAt', { mode: 'date' }).defaultNow().notNull(),
+});
+```
+
+Or use the CLI:
+
+```bash
+npx crudora generate-schema --entry src/server.ts --output src/db/schema.ts
+```
+
+## Custom Routes
 
 ```typescript
 server
-  .get("/health", (req, res) => {
-    res.json({ status: "ok", timestamp: new Date() });
+  .get('/health', (_req, res) => {
+    res.json({ success: true, data: { status: 'ok', timestamp: new Date() } });
   })
-  .post("/users/:id/activate", async (req, res) => {
+  .post('/auth/login', async (req, res) => {
+    const { email, password } = req.body;
     const userRepo = server.getCrudora().getRepository(User);
-    const user = await userRepo.update(req.params.id, { active: true });
-    res.json(user);
+    // includeHidden: true bypasses static hidden so the password hash is readable
+    const row = await userRepo.findOne({ email }, { includeHidden: true });
+    if (!row || !verifyPassword(password, (row as any).password)) {
+      return res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Invalid credentials' } });
+    }
+    const { password: _pw, ...safeUser } = row as any;
+    res.json({ success: true, data: { token: generateJWT(safeUser) } });
   });
 ```
 
-### Schema Generation
+## Authentication
+
+Crudora has no built-in auth by design — strategies differ too much across projects. Use standard Express middleware instead.
+
+**Protect all auto-generated routes:**
 
 ```typescript
-// Generate Prisma schema from your models
-const schema = server.getCrudora().generatePrismaSchema("postgresql");
-console.log(schema);
+// Mount before generateRoutes() — every /api/* route will require a valid JWT
+server.getApp().use('/api', verifyJWT);
+
+server.registerModel(User, Post).generateRoutes().listen();
 ```
 
-### Validation
-
-Crudora automatically generates Zod validation schemas:
+**Add a login route** (note: `findOne()` strips `hidden` fields — pass `{ includeHidden: true }` to bypass):
 
 ```typescript
-const crudora = server.getCrudora();
+server.post('/auth/login', async (req, res) => {
+  const userRepo = server.getCrudora().getRepository(User);
 
-// Get partial validation schema (for updates)
-const partialSchema = crudora.getValidationSchema(User);
+  // includeHidden: true bypasses static hidden so the password hash is readable
+  const row = await userRepo.findOne({ email: req.body.email }, { includeHidden: true });
 
-// Get strict validation schema (for creation)
-const strictSchema = crudora.getStrictValidationSchema(User);
+  if (!row || !verifyPassword(req.body.password, (row as any).password)) {
+    return res.status(401).json({ success: false, error: 'Invalid credentials' });
+  }
+  const { password: _pw, ...safeUser } = row as any;
+  res.json({ success: true, data: { token: generateJWT(safeUser) } });
+});
 ```
+
+See the [Authentication Guide](./docs/authentication.md) for register, per-route middleware, role guards, and a full JWT example.
 
 ## Project Setup
 
-After installing Crudora, run these commands to complete setup:
-
 ```bash
-# Install additional dependencies
-npm install @prisma/client prisma dotenv
+# Install dependencies
+npm install drizzle-orm pg
+npm install -D drizzle-kit typescript ts-node
 
-# Generate Prisma client
-npm run db:generate
+# Update .env with your DATABASE_URL
 
-# Push database schema
-npm run db:push
+# Push schema to database
+npx drizzle-kit push
 
 # Start development server
-npm run dev
+npx ts-node src/server.ts
 ```
-
-## Available Scripts
-
-Crudora automatically adds these scripts to your package.json:
-
-- `npm run dev` - Start development server with ts-node
-- `npm run build` - Build TypeScript to JavaScript
-- `npm run start` - Start production server from built JavaScript
-- `npm run start:prod` - Build and start production server
-- `npm run db:generate` - Generate Prisma client
-- `npm run db:push` - Push schema to database
-- `npm run db:migrate` - Run database migrations
-- `npm run db:studio` - Open Prisma Studio
 
 ## Documentation
 
 - [API Reference](./docs/api.md)
 - [Model Definition Guide](./docs/models.md)
 - [Custom Routes](./docs/custom-routes.md)
+- [Authentication Guide](./docs/authentication.md)
 - [Deployment Guide](./docs/deployment.md)
 
 ## Contributing
@@ -321,8 +551,4 @@ We welcome contributions! Please see our [Contributing Guide](./CONTRIBUTING.md)
 
 ## License
 
-MIT © [Crudora](https://github.com/suryamsj/crudora)
-
----
-
-**⚠️ Alpha Version - Not recommended for production use**
+MIT © [Muhammad Surya J](https://suryamsj.my.id)

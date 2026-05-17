@@ -1,238 +1,186 @@
 # Custom Routes Guide
 
-Crudora allows you to add custom routes alongside the automatically generated CRUD endpoints.
+Crudora lets you add custom routes alongside the automatically generated CRUD endpoints.
+
+All responses should use Crudora's standard JSON envelope for consistency:
+
+```json
+{ "success": true,  "data": ... }
+{ "success": false, "error": "...", "details": [...] }
+```
 
 ## Basic Custom Routes
 
-### Adding Custom Routes with CrudoraServer
-
 ```typescript
-import { CrudoraServer } from 'crudora';
-import { PrismaClient } from '@prisma/client';
+import { CrudoraServer, Model, Field } from 'crudora';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
 
-const prisma = new PrismaClient();
-const server = new CrudoraServer({ port: 3000, prisma });
+const db = drizzle(new Pool({ connectionString: process.env.DATABASE_URL }));
+const server = new CrudoraServer({ db, dialect: 'postgresql', port: 3000 });
 
-// Add custom routes
 server
-  .get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date() });
+  .get('/health', (_req, res) => {
+    res.json({ success: true, data: { status: 'ok', timestamp: new Date() } });
   })
   .post('/auth/login', async (req, res) => {
-    // Login logic
     const { email, password } = req.body;
     // ... authentication logic
-    res.json({ token: 'jwt-token' });
+    res.json({ success: true, data: { token: 'jwt-token' } });
   })
   .put('/users/:id/activate', async (req, res) => {
-    const userId = req.params.id;
     // ... activation logic
-    res.json({ message: 'User activated' });
+    res.json({ success: true, data: { message: 'User activated' } });
   });
 ```
 
-### Adding Custom Routes with Crudora
+### Using Crudora Directly
 
 ```typescript
 import { Crudora } from 'crudora';
 import express from 'express';
 
 const app = express();
-const crudora = new Crudora(prisma);
+const crudora = new Crudora(db, 'postgresql');
 
-// Add custom routes
 crudora
-  .get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date() });
-  })
-  .post('/auth/login', async (req, res) => {
-    // Login logic
-  });
+  .get('/health', (_req, res) => res.json({ success: true, data: { status: 'ok' } }))
+  .post('/notify', async (req, res) => { /* ... */ });
 
-// Generate routes
 crudora.generateRoutes(app, '/api');
 ```
 
 ### HTTP Methods
 
-Crudora supports all standard HTTP methods:
-
 ```typescript
-server.get('/path', handler);     // GET
-server.post('/path', handler);    // POST
-server.put('/path', handler);     // PUT
-server.delete('/path', handler);  // DELETE
-server.patch('/path', handler);   // PATCH
+server.get('/path', handler);
+server.post('/path', handler);
+server.put('/path', handler);
+server.delete('/path', handler);
+server.patch('/path', handler);
 ```
 
 ## Advanced Custom Routes
 
-### Using Repositories in Custom Routes
+### Using Repositories
 
 ```typescript
 server.post('/users/:id/posts', async (req, res) => {
   try {
-    const userId = req.params.id;
-    const postData = req.body;
-
-    // Get repository instances
-    const crudora = server.getCrudora();
+    const crudora  = server.getCrudora();
     const userRepo = crudora.getRepository(User);
     const postRepo = crudora.getRepository(Post);
 
-    // Verify user exists
-    const user = await userRepo.findById(userId);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+    const user = await userRepo.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
 
-    // Create post
-    const post = await postRepo.create({
-      ...postData,
-      authorId: userId
-    });
-
-    res.status(201).json(post);
-  } catch (error) {
-    res.status(500).json({ error: 'Internal server error' });
+    const post = await postRepo.create({ ...req.body, authorId: user.id });
+    res.status(201).json({ success: true, data: post });
+  } catch {
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 ```
 
 ### Authentication Routes
 
+> **Important:** `findOne()` and all repository methods strip `hidden` fields at query time.
+> If `password` is in `static hidden`, `user.password` will be `undefined`.
+> Pass `{ includeHidden: true }` to temporarily bypass hidden-field stripping.
+
 ```typescript
-// Login endpoint
 server.post('/auth/login', async (req, res) => {
   const { email, password } = req.body;
-
   const userRepo = server.getCrudora().getRepository(User);
-  const users = await userRepo.findAll({ where: { email } });
 
-  if (!users.length || !verifyPassword(password, users[0].password)) {
-    return res.status(401).json({ error: 'Invalid credentials' });
+  // includeHidden: true bypasses static hidden so password hash is readable
+  const row = await userRepo.findOne({ email }, { includeHidden: true });
+
+  if (!row || !verifyPassword(password, (row as any).password)) {
+    return res.status(401).json({ success: false, error: 'Invalid credentials' });
   }
 
-  const token = generateJWT(users[0]);
-  res.json({ token, user: users[0] });
+  // Strip the hash before sending the response
+  const { password: _pw, ...safeUser } = row as any;
+  res.json({ success: true, data: { token: generateJWT(safeUser), user: safeUser } });
 });
 
-// Register endpoint
 server.post('/auth/register', async (req, res) => {
   const { name, email, password } = req.body;
-
   const userRepo = server.getCrudora().getRepository(User);
 
-  // Check if user exists
-  const existingUsers = await userRepo.findAll({ where: { email } });
-  if (existingUsers.length) {
-    return res.status(400).json({ error: 'User already exists' });
-  }
+  const exists = await userRepo.exists({ email });
+  if (exists) return res.status(400).json({ success: false, error: 'User already exists' });
 
-  // Create user
-  const hashedPassword = await hashPassword(password);
-  const user = await userRepo.create({
-    name,
-    email,
-    password: hashedPassword
-  });
-
-  const token = generateJWT(user);
-  res.status(201).json({ token, user });
-});
-```
-
-### Search and Filtering Routes
-
-```typescript
-// Advanced search
-server.get('/search/users', async (req, res) => {
-  const { q, category, minAge, maxAge } = req.query;
-
-  const userRepo = server.getCrudora().getRepository(User);
-
-  const whereClause: any = {};
-
-  if (q) {
-    whereClause.OR = [
-      { name: { contains: q } },
-      { email: { contains: q } }
-    ];
-  }
-
-  if (category) {
-    whereClause.category = category;
-  }
-
-  if (minAge || maxAge) {
-    whereClause.age = {};
-    if (minAge) whereClause.age.gte = parseInt(minAge as string);
-    if (maxAge) whereClause.age.lte = parseInt(maxAge as string);
-  }
-
-  const users = await userRepo.findAll({ where: whereClause });
-  res.json(users);
+  // beforeCreate hook hashes the password before it reaches the DB
+  const user = await userRepo.create({ name, email, password });
+  res.status(201).json({ success: true, data: { token: generateJWT(user), user } });
 });
 ```
 
 ### Aggregation Routes
 
 ```typescript
-// Statistics endpoint
-server.get('/stats/users', async (req, res) => {
+server.get('/stats/users', async (_req, res) => {
   const userRepo = server.getCrudora().getRepository(User);
 
-  const [total, active, inactive] = await Promise.all([
+  const [total, active] = await Promise.all([
     userRepo.count(),
-    userRepo.count({ isActive: true }),
-    userRepo.count({ isActive: false })
+    userRepo.count({ isActive: 'true' }),
   ]);
 
-  res.json({
-    total,
-    active,
-    inactive,
-    activePercentage: total > 0 ? (active / total) * 100 : 0
-  });
+  res.json({ success: true, data: { total, active, inactive: total - active } });
+});
+```
+
+### Bulk Create with `createMany`
+
+```typescript
+server.post('/users/bulk', async (req, res) => {
+  try {
+    const crudora  = server.getCrudora();
+    const schema   = crudora.getStrictValidationSchema(User);
+    const userRepo = crudora.getRepository(User);
+
+    const parsed = schema.array().safeParse(req.body.users);
+    if (!parsed.success) {
+      return res.status(422).json({
+        success: false,
+        error: 'Validation failed',
+        details: parsed.error.issues,
+      });
+    }
+
+    const created = await userRepo.createMany(parsed.data);
+    res.status(201).json({ success: true, data: created });
+  } catch {
+    res.status(500).json({ success: false, error: 'Internal server error' });
+  }
 });
 ```
 
 ### Validation in Custom Routes
 
 ```typescript
-server.post('/users/bulk', async (req, res) => {
+server.post('/users/invite', async (req, res) => {
   try {
-    const { users } = req.body;
-
-    // Get validation schema
-    const crudora = server.getCrudora();
-    const schema = crudora.getStrictValidationSchema(User);
-
-    // Validate each user
-    const validatedUsers = [];
-    for (const userData of users) {
-      const result = schema.safeParse(userData);
-      if (!result.success) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          details: result.error.errors
-        });
-      }
-      validatedUsers.push(result.data);
-    }
-
-    // Create users
+    const crudora  = server.getCrudora();
+    const schema   = crudora.getStrictValidationSchema(User);
     const userRepo = crudora.getRepository(User);
-    const createdUsers = [];
 
-    for (const userData of validatedUsers) {
-      const user = await userRepo.create(userData);
-      createdUsers.push(user);
+    const result = schema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(422).json({
+        success: false,
+        error:   'Validation error',
+        details: result.error.issues,
+      });
     }
 
-    res.status(201).json(createdUsers);
-  } catch (error) {
-    res.status(500).json({ error: 'Internal server error' });
+    const user = await userRepo.create(result.data);
+    res.status(201).json({ success: true, data: user });
+  } catch {
+    res.status(500).json({ success: false, error: 'Internal server error' });
   }
 });
 ```
@@ -240,120 +188,102 @@ server.post('/users/bulk', async (req, res) => {
 ### Middleware for Custom Routes
 
 ```typescript
-// Add middleware before defining routes
-server.use(express.json());
-server.use(cors());
-
-// Authentication middleware
-const authenticateToken = (req: any, res: any, next: any) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
-  // Verify token logic here
-  req.user = { id: 'user-id' }; // Set user from token
+const authenticate = (req: any, res: any, next: any) => {
+  const token = req.headers['authorization']?.split(' ')[1];
+  if (!token) return res.status(401).json({ success: false, error: 'Access token required' });
+  req.user = verifyJWT(token);
   next();
 };
 
-// Protected routes
-server.get('/profile', authenticateToken, async (req: any, res) => {
+// Apply to specific routes
+server.get('/profile', authenticate, async (req: any, res) => {
   const userRepo = server.getCrudora().getRepository(User);
   const user = await userRepo.findById(req.user.id);
-  res.json(user);
+  if (!user) return res.status(404).json({ success: false, error: 'Not found' });
+  res.json({ success: true, data: user });
+});
+```
+
+### Cursor Pagination in Custom Routes
+
+```typescript
+server.get('/feed', async (req, res) => {
+  const postRepo = server.getCrudora().getRepository(Post);
+
+  const result = await postRepo.findWithCursor({
+    take:   20,
+    cursor: req.query.cursor as string | undefined,
+    where:  { published: 'true' },
+  });
+
+  res.json({
+    success: true,
+    data:    result.data,
+    meta:    { nextCursor: result.nextCursor },
+  });
 });
 ```
 
 ## Route Organization
 
-### Grouping Routes
+For larger applications, organize routes in separate files:
 
 ```typescript
-// User-related routes
-server
-  .get('/users/profile', getUserProfile)
-  .put('/users/profile', updateUserProfile)
-  .post('/users/change-password', changePassword);
+// routes/auth.ts
+import { Crudora } from 'crudora';
 
-// Admin routes
-server
-  .get('/admin/stats', getAdminStats)
-  .post('/admin/users/:id/ban', banUser)
-  .delete('/admin/users/:id', deleteUser);
+export const authRoutes = (crudora: Crudora) => {
+  crudora
+    .post('/auth/login',    loginHandler)
+    .post('/auth/register', registerHandler)
+    .post('/auth/logout',   logoutHandler);
+};
 
-// API versioning
-server
-  .get('/v1/users', getUsersV1)
-  .get('/v2/users', getUsersV2);
+// routes/admin.ts
+export const adminRoutes = (crudora: Crudora) => {
+  crudora
+    .get('/admin/stats',          getStats)
+    .post('/admin/users/:id/ban', banUser);
+};
+
+// server.ts
+import { authRoutes }  from './routes/auth';
+import { adminRoutes } from './routes/admin';
+
+authRoutes(server.getCrudora());
+adminRoutes(server.getCrudora());
 ```
 
-### Error Handling
+## Error Handling
 
 ```typescript
 // Global error handler
-server.use((err: any, req: any, res: any, next: any) => {
+server.use((err: any, _req: any, res: any, _next: any) => {
   console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
+  res.status(500).json({ success: false, error: 'Something went wrong' });
 });
 
-// Custom error handling in routes
+// Per-route error handling
 server.get('/users/:id', async (req, res) => {
   try {
-    const userRepo = server.getCrudora().getRepository(User);
-    const user = await userRepo.findById(req.params.id);
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    res.json(user);
+    const user = await server.getCrudora().getRepository(User).findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, error: 'User not found' });
+    res.json({ success: true, data: user });
   } catch (error) {
-    console.error('Error fetching user:', error);
-    res.status(500).json({ error: 'Failed to fetch user' });
+    res.status(500).json({ success: false, error: 'Failed to fetch user' });
   }
 });
 ```
 
 ## Best Practices
 
-1. **Use repositories** for database operations instead of direct Prisma calls
-2. **Validate input** using Crudora's validation schemas or custom validation
-3. **Handle errors gracefully** with proper HTTP status codes
-4. **Use middleware** for common functionality like authentication
-5. **Group related routes** for better organization
-6. **Follow RESTful conventions** when possible
-7. **Add proper error handling** for all async operations
-8. **Test your custom routes** thoroughly
-9. **Use async/await** for better error handling
-10. **Test your custom routes** thoroughly
-
-## Route Organization
-
-For larger applications, consider organizing routes in separate files:
-
-```typescript
-// routes/auth.ts
-export const authRoutes = (crudora: Crudora) => {
-  crudora
-    .post('/auth/login', loginHandler)
-    .post('/auth/register', registerHandler)
-    .post('/auth/logout', logoutHandler)
-}
-
-// routes/users.ts
-export const userRoutes = (crudora: Crudora) => {
-  crudora
-    .get('/users/search', searchUsers)
-    .put('/users/:id/activate', activateUser)
-    .get('/users/stats', getUserStats)
-}
-
-// main.ts
-import { authRoutes } from './routes/auth'
-import { userRoutes } from './routes/users'
-
-authRoutes(crudora)
-userRoutes(crudora)
-```
+1. **Use the `{ success, data/error }` envelope** in all custom route responses for consistency with auto-generated routes
+2. **Use repositories** for database operations — never query the db directly in routes
+3. **Use `findOne` / `exists`** instead of `findAll` when checking a single record
+4. **Use `createMany`** for bulk inserts — it's a single query, not a loop of `create()` calls
+5. **Validate input** with `getStrictValidationSchema()` or custom Zod schemas
+6. **Handle errors** with proper HTTP status codes
+7. **Use middleware** for cross-cutting concerns like authentication
+8. **Group related routes** in separate files for maintainability
+9. **Follow RESTful conventions** when possible
+10. **Use `async/await`** — all repository methods are async
