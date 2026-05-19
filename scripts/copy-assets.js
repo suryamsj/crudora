@@ -22,5 +22,6 @@ function copyDir(src, dest) {
 
 copyDir('templates', 'dist/templates');
 copyDir('scripts', 'dist/scripts');
+fs.copyFileSync('README.md', 'dist/README.md');
 
 console.log('✅ Assets copied to dist/');
