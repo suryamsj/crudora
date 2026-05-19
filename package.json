@@ -1,6 +1,6 @@
 {
   "name": "crudora",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
@@ -93,7 +93,8 @@
     "typescript": "^5.8.3"
   },
   "peerDependencies": {
-    "drizzle-orm": "^0.40.0"
+    "drizzle-orm": "^0.40.0",
+    "@scalar/express-api-reference": ">=0.6.0"
   },
   "peerDependenciesMeta": {
     "pg": {
@@ -103,6 +104,9 @@
       "optional": true
     },
     "mysql2": {
+      "optional": true
+    },
+    "@scalar/express-api-reference": {
       "optional": true
     }
   }

@@ -52,6 +52,26 @@ console.log(schema)
 
 **Returns:** `string` — ready-to-use TypeScript Drizzle schema
 
+#### generateOpenApiSpec(basePath?, info?)
+
+Generates an OpenAPI 3.0 spec object from all registered models. The spec is used internally by the built-in `docs` endpoint and can be consumed directly for custom tooling.
+
+```typescript
+const spec = crudora.generateOpenApiSpec('/api', {
+  title: 'My API',
+  version: '2.0.0',
+  description: 'Optional description',
+})
+```
+
+**Parameters:**
+- `basePath` — optional, defaults to `'/api'`
+- `info` — optional `{ title?, version?, description? }`
+
+**Returns:** `Record<string, any>` — OpenAPI 3.0 JSON-serializable object
+
+---
+
 #### getValidationSchema\<T\>(modelClass)
 
 Returns a **partial** Zod schema derived from `static fillable`. Used internally by **PATCH** routes (partial update — all fields optional).
@@ -121,6 +141,7 @@ interface CrudoraServerConfig {
   rateLimit?: RateLimitConfig | false;  // default: 100 req/min per IP
   timeout?: number;                     // socket timeout in ms; 503 on expiry. default: 0 (disabled)
   healthCheck?: boolean | string;       // default: true → GET /health; string = custom path; false = disabled
+  docs?: boolean | string;              // default: false; true → GET /docs (Scalar UI); string = custom path
 }
 
 interface RateLimitConfig {
@@ -170,6 +191,32 @@ Retry-After: 60                 ← only on 429
 - `true` (default) — mount `GET /health` returning `{ success: true, data: { status: 'ok', timestamp } }`
 - `'/healthz'` — mount on a custom path
 - `false` — disable entirely
+
+**`docs` options:**
+- `false` (default) — disabled
+- `true` — mount Scalar UI at `GET /docs` and raw spec at `GET /docs/openapi.json`
+- `'/api-docs'` — custom base path (same behaviour, different mount point)
+- `DocsConfig` — full control over path, OpenAPI info fields, and Scalar UI options
+
+```typescript
+docs: {
+  path: '/docs',         // where UI and spec are served
+  title: 'My API',      // OpenAPI info.title
+  version: '2.0.0',     // OpenAPI info.version
+  description: '...',   // OpenAPI info.description
+  scalar: {             // forwarded directly to @scalar/express-api-reference
+    theme: 'purple',
+    darkMode: true,
+    layout: 'classic',
+  },
+}
+```
+
+> **Requires `@scalar/express-api-reference`** — install it separately:
+> ```bash
+> npm install @scalar/express-api-reference
+> ```
+> If the package is not installed and `docs` is enabled, Crudora logs a warning and serves a plain install-prompt page at the docs path. The `/openapi.json` spec endpoint is always served regardless.
 
 ### Methods
 

@@ -25,6 +25,7 @@ Automatic CRUD API generator for TypeScript with Drizzle ORM — build REST APIs
 - **Request Timeout** — built-in socket-level timeout middleware; returns `503` when a handler exceeds the configured limit
 - **Health Check** — built-in `GET /health` endpoint; configurable path or disable entirely
 - **Graceful Shutdown** — `listen()` returns the underlying `http.Server` for clean SIGTERM handling
+- **Built-in API Docs** — Scalar interactive UI at `/docs`; fully configurable (theme, layout, info); enable with `docs: true` after installing `@scalar/express-api-reference`
 - **Standardized Responses** — all endpoints return `{ success, data, meta?, error? }` OpenAPI-style envelope
 - **Schema Generator** — auto-generate Drizzle TypeScript schema files from models
 - **TypeScript First** — full type safety, ESM and CJS dual build
@@ -101,6 +102,7 @@ const server = new CrudoraServer({
   port:        3000,
   timeout:     30_000,   // 503 after 30 s with no response
   healthCheck: true,     // GET /health → { status: 'ok' }
+  // docs: true,         // GET /docs → Scalar UI (requires @scalar/express-api-reference)
 });
 
 const httpServer = server
@@ -530,6 +532,46 @@ server.post('/auth/login', async (req, res) => {
 
 See the [Authentication Guide](./docs/authentication.md) for register, per-route middleware, role guards, and a full JWT example.
 
+## API Documentation (Scalar)
+
+Crudora can serve an interactive API reference powered by [Scalar](https://scalar.com) — auto-generated from your registered models.
+
+**1. Install the peer dependency:**
+
+```bash
+npm install @scalar/express-api-reference
+```
+
+**2. Enable `docs` in your server config:**
+
+```typescript
+const server = new CrudoraServer({
+  db,
+  dialect: 'postgresql',
+  docs: true, // → GET /docs (UI) + GET /docs/openapi.json (spec)
+});
+```
+
+**3. Customize as needed:**
+
+```typescript
+docs: {
+  path: '/docs',           // custom mount path, e.g. '/api-docs'
+  title: 'My API',         // shown in Scalar UI header
+  version: '1.0.0',
+  description: 'Full description of what this API does.',
+  scalar: {                // any @scalar/express-api-reference option
+    theme: 'purple',       // 'default' | 'alternate' | 'moon' | 'purple' | ...
+    darkMode: true,
+    layout: 'classic',     // 'modern' (default) | 'classic'
+  },
+},
+```
+
+The raw OpenAPI 3.0 spec is always available at `{path}/openapi.json` — useful for importing into Postman, Insomnia, or other tooling even without the UI package installed.
+
+> If `@scalar/express-api-reference` is not installed and `docs` is enabled, Crudora logs a warning and serves a plain install-prompt page. The spec endpoint is unaffected.
+
 ## Project Setup
 
 ```bash
@@ -553,6 +595,7 @@ npx ts-node src/server.ts
 - [Custom Routes](./docs/custom-routes.md)
 - [Authentication Guide](./docs/authentication.md)
 - [Deployment Guide](./docs/deployment.md)
+- [API Documentation (Scalar)](#api-documentation-scalar)
 
 ## Contributing
 

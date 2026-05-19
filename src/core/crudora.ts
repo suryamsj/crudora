@@ -2,6 +2,7 @@ import { Express } from 'express';
 import { z } from 'zod';
 import { Repository, NotFoundError } from './repository';
 import { SchemaGenerator } from './schemaGenerator';
+import { OpenApiGenerator, OpenApiInfo } from './openApiGenerator';
 import { ValidationGenerator } from '../utils/validation';
 import { Model, ModelConstructor } from './model';
 import { DrizzleTableBuilder } from './drizzleTableBuilder';
@@ -122,6 +123,15 @@ export class Crudora {
   generateDrizzleSchema(): string {
     const modelClasses = Array.from(this.models.values());
     return SchemaGenerator.generateDrizzleSchema(modelClasses, this.dialect);
+  }
+
+  generateOpenApiSpec(basePath: string = '/api', info?: OpenApiInfo): Record<string, any> {
+    return OpenApiGenerator.generate(
+      this.models,
+      this.customRoutes.map(({ method, path }) => ({ method, path })),
+      basePath,
+      info,
+    );
   }
 
   getValidationSchema<T extends Model>(modelClass: ModelConstructor<T>): z.ZodType<Partial<T>> {

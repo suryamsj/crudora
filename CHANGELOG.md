@@ -6,6 +6,25 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ---
 
+## [0.4.0] — 2026-05-20
+
+### Added
+
+- **Built-in API docs (Scalar)** — new `docs` option on `CrudoraServerConfig`. When enabled, mounts an interactive Scalar UI at `/docs` (or a custom path) and serves the raw OpenAPI 3.0 spec at `/docs/openapi.json`. Requires `@scalar/express-api-reference` as an optional peer dependency.
+- **`DocsConfig`** — full configuration object accepted by `docs`: `path`, `title`, `version`, `description`, and a `scalar` field for all Scalar UI options.
+- **`ScalarConfig`** — fully typed interface for `@scalar/express-api-reference` options (`theme`, `layout`, `darkMode`, `hideModels`, `servers`, `authentication`, `customCss`, `metaData`, and more). Index signature allows any additional Scalar option without TypeScript errors.
+- **`OpenApiGenerator`** — new class that converts registered model `@Field()` metadata and routes into an OpenAPI 3.0 spec object. Exported from the package for custom tooling.
+- **`OpenApiInfo`** — companion type for `OpenApiGenerator.generate()` / `Crudora.generateOpenApiSpec()`.
+- **`Crudora.generateOpenApiSpec(basePath?, info?)`** — generates the OpenAPI spec on demand; used internally by the docs middleware and available for custom use.
+- **`@scalar/express-api-reference`** added to `peerDependencies` (optional) so package managers surface it to users who enable `docs`.
+
+### Behaviour
+
+- If `docs` is enabled but `@scalar/express-api-reference` is not installed, Crudora logs a warning and serves a plain install-prompt HTML page at the docs path. The `/openapi.json` spec endpoint is always served.
+- `listen()` logs the docs URL alongside the API URL when `docs` is enabled.
+
+---
+
 ## [0.3.0] — 2026-05-17
 
 ### Added
