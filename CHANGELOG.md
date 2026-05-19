@@ -6,6 +6,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ---
 
+## [0.4.1] — 2026-05-20
+
+### Fixed
+
+- Version bump to align with published release.
+
+---
+
 ## [0.4.0] — 2026-05-20
 
 ### Added

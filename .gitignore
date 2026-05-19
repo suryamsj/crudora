@@ -11,6 +11,11 @@
 /prisma/migrations
 /prisma/dev.db
 
+# Drizzle
+drizzle.config.ts
+src/db
+src/server.ts
+
 # Output
 /dist
 /coverage
